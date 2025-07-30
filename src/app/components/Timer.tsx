@@ -20,7 +20,7 @@ const Timer = ({ roomId }: { roomId: string }) => {
   const searchParams = useSearchParams();
 
   const workAudioRef = useRef<HTMLAudioElement>(null);
-  const breakAudioRef = useRef<HTMLHTMLAudioElement>(null);
+  const breakAudioRef = useRef<HTMLAudioElement>(null);
   const [isInteracted, setIsInteracted] = useState(false);
 
   useEffect(() => {
