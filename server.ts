@@ -1,3 +1,4 @@
+
 import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
@@ -34,7 +35,7 @@ const startTimer = (io: Server, roomId: string) => {
 
   const room = rooms[roomId];
   room.isActive = true;
-  stopTimerForRoom(roomId); // 念のため、開始前に既存のタイマーをクリア
+  // stopTimerForRoom(roomId); // 念のため、開始前に既存のタイマーをクリア
 
   room.interval = setInterval(() => {
     if (room.time > 0) {
@@ -58,7 +59,7 @@ const startTimer = (io: Server, roomId: string) => {
     });
 
   }, 1000);
-}; 
+};
 
 const pauseTimer = (io: Server, roomId: string) => {
   if (!rooms[roomId] || !rooms[roomId].isActive) return;
@@ -81,6 +82,30 @@ const resetTimer = (io: Server, roomId: string) => {
     io.to(roomId).emit('timer:tick', room);
 }
 
+// ★フェーズを強制的に切り替える関数
+const togglePhase = (io: Server, roomId: string) => {
+    if (!rooms[roomId]) return;
+    const room = rooms[roomId];
+
+    // 現在のタイマーを停止
+    stopTimerForRoom(roomId);
+
+    // フェーズを切り替える
+    if (room.phase === 'work') {
+        room.phase = 'break';
+        room.time = room.breakDuration;
+    } else {
+        room.phase = 'work';
+        room.time = room.workDuration;
+    }
+    // isActiveはそのまま（動いていれば動いたまま、止まっていれば止まったまま）
+    // 新しいフェーズの状態を全員に通知
+    io.to(roomId).emit('timer:tick', room);
+
+    // フェーズを切り替えたら、常にタイマーを開始する
+    startTimer(io, roomId);
+};
+
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
     const parsedUrl = parse(req.url!, true);
@@ -95,7 +120,6 @@ app.prepare().then(() => {
     socket.on('room:join', ({ roomId, settings }) => {
       socket.join(roomId);
 
-      // ★部屋がまだ存在しない場合のみ、設定を適用
       if (!rooms[roomId]) {
         const workDuration = settings.workTime ? settings.workTime * 60 : DEFAULT_WORK_DURATION;
         const breakDuration = settings.breakTime ? settings.breakTime * 60 : DEFAULT_BREAK_DURATION;
@@ -122,6 +146,11 @@ app.prepare().then(() => {
 
     socket.on('timer:reset', (roomId: string) => {
       resetTimer(io, roomId);
+    });
+
+    // ★フェーズ切り替えイベントのハンドラを追加
+    socket.on('timer:togglePhase', (roomId: string) => {
+        togglePhase(io, roomId);
     });
 
     socket.on('disconnect', () => {

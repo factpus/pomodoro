@@ -18,11 +18,29 @@ const VolumeControl: React.FC<VolumeControlProps> = ({ volume, setVolume, isMute
 
   return (
     <div 
-      className="absolute top-4 right-4 flex items-center"
+      className="absolute top-4 left-4 flex items-center overflow-hidden rounded-full bg-gray-700 transition-all duration-300"
       onMouseEnter={() => setIsSliderVisible(true)}
       onMouseLeave={() => setIsSliderVisible(false)}
+      style={{ width: isSliderVisible ? '160px' : '40px' }} // スライダー表示時に幅を広げる
     >
-      {isSliderVisible && (
+      {/* ミュートボタンを先に配置 */}
+      <button 
+        onClick={handleMuteToggle}
+        className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition flex-shrink-0"
+        aria-label={isMuted ? 'Unmute' : 'Mute'}
+      >
+        {isMuted ? (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75 19.5 12m0 0 2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6 4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z" />
+        </svg>
+        
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z" />
+          </svg>
+        )}
+        </button>
+        {/* スライダーをボタンの後に配置 */}
         <input
           type="range"
           min="0"
@@ -30,32 +48,17 @@ const VolumeControl: React.FC<VolumeControlProps> = ({ volume, setVolume, isMute
           step="0.01"
           value={volume}
           onChange={(e) => setVolume(parseFloat(e.target.value))}
-          className="
+          className={`
             h-1 w-24 
             cursor-pointer 
             accent-red-500 
-            mr-2 
             bg-gray-300 
             rounded-full
-          "
+            transition-transform duration-300 
+            ${isSliderVisible ? 'translate-x-0' : 'translate-x-full'} 
+            ml-2
+          `} 
         />
-      )}
-      <button 
-        onClick={handleMuteToggle}
-        className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition"
-        aria-label={isMuted ? 'Unmute' : 'Mute'}
-      >
-        {isMuted ? (
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15.586a1 1 0 01.707-.293h.01a1 1 0 01.707.293l.293.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l.293-.293a1 1 0 01.707-.293h.01a1 1 0 01.707.293L3 16.586V6a1 1 0 012 0v10.586l.414-.414zM15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.414 21.414a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414l2 2a1 1 0 010 1.414zM12 19a7 7 0 007-7" />
-          </svg>
-        ) : (
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.586a1 1 0 01.707-.293h.01a1 1 0 01.707.293l.293.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l.293-.293a1 1 0 01.707-.293h.01a1 1 0 01.707.293L3 16.586V6a1 1 0 012 0v10.586l.414-.414zM15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        )}
-      </button>
     </div>
   );
 }

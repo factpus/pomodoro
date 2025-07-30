@@ -20,7 +20,7 @@ const Timer = ({ roomId }: { roomId: string }) => {
   const searchParams = useSearchParams();
 
   const workAudioRef = useRef<HTMLAudioElement>(null);
-  const breakAudioRef = useRef<HTMLAudioElement>(null);
+  const breakAudioRef = useRef<HTMLHTMLAudioElement>(null);
   const [isInteracted, setIsInteracted] = useState(false);
 
   useEffect(() => {
@@ -102,6 +102,12 @@ const Timer = ({ roomId }: { roomId: string }) => {
     socket.emit('timer:reset', roomId);
   };
 
+  // ★フェーズ切り替えハンドラを追加
+  const handleTogglePhase = () => {
+    handleInteraction(); // ユーザー操作とみなす
+    socket.emit('timer:togglePhase', roomId);
+  };
+
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = time % 60;
@@ -134,6 +140,13 @@ const Timer = ({ roomId }: { roomId: string }) => {
               className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded w-32"
               >
               Reset
+              </button>
+              {/* ★フェーズ切り替えボタンを追加 */}
+              <button
+                onClick={handleTogglePhase}
+                className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded w-32"
+              >
+                Toggle Phase
               </button>
           </div>
       </div>
