@@ -36,8 +36,9 @@ const startTimer = (io: Server, roomId: string) => {
 
   const room = rooms[roomId];
   room.isActive = true;
-  // ★追加：タイマー開始をクライアントに通知
-  io.to(roomId).emit('timer:stateChanged', room);
+  // ★追加：タイマー開始をクライアントに通知 (intervalを除外)
+  const { interval, ...clientState } = room;
+  io.to(roomId).emit('timer:stateChanged', clientState);
   stopTimerForRoom(roomId); // 念のため、開始前に既存のタイマーをクリア
 
   room.interval = setInterval(() => {
@@ -55,8 +56,9 @@ const startTimer = (io: Server, roomId: string) => {
             room.phase = 'work';
             room.time = room.workDuration;
         }
-        // 状態が大きく変わった時だけ、全体の情報を送信
-        io.to(roomId).emit('timer:stateChanged', room);
+        // 状態が大きく変わった時だけ、全体の情報を送信 (intervalを除外)
+        const { interval, ...clientState } = room;
+        io.to(roomId).emit('timer:stateChanged', clientState);
     }
   }, 1000);
 };
@@ -66,8 +68,9 @@ const pauseTimer = (io: Server, roomId: string) => {
   
   stopTimerForRoom(roomId);
   rooms[roomId].isActive = false;
-  // 停止した状態を即座に通知
-  io.to(roomId).emit('timer:stateChanged', rooms[roomId]);
+  // 停止した状態を即座に通知 (intervalを除外)
+  const { interval, ...clientState } = rooms[roomId];
+  io.to(roomId).emit('timer:stateChanged', clientState);
 };
 
 const resetTimer = (io: Server, roomId: string) => {
@@ -79,8 +82,9 @@ const resetTimer = (io: Server, roomId: string) => {
     room.phase = 'work';
     room.time = room.workDuration;
     room.completedPomodoros = 0; // リセット
-    // リセットした状態を即座に通知
-    io.to(roomId).emit('timer:stateChanged', room);
+    // リセットした状態を即座に通知 (intervalを除外)
+    const { interval, ...clientState } = room;
+    io.to(roomId).emit('timer:stateChanged', clientState);
 }
 
 // ★フェーズを強制的に切り替える関数
@@ -106,8 +110,9 @@ const togglePhase = (io: Server, roomId: string) => {
     if (wasActive) {
         startTimer(io, roomId); // startTimerがisActiveをtrueにし、stateChangedをemitする
     } else {
-        // もし止まっていたなら、新しい状態を通知するだけ
-        io.to(roomId).emit('timer:stateChanged', room);
+        // もし止まっていたなら、新しい状態を通知するだけ (intervalを除外)
+        const { interval, ...clientState } = room;
+        io.to(roomId).emit('timer:stateChanged', clientState);
     }
 };
 
@@ -139,7 +144,10 @@ app.prepare().then(() => {
         };
       }
       // 参加したユーザーに現在のタイマー状態を送信
-      socket.emit('timer:stateChanged', rooms[roomId]);
+      // 参加したユーザーに現在のタイマー状態を送信 (intervalを除外)
+      const { interval, ...clientState } = rooms[roomId];
+      socket.emit('timer:stateChanged', clientState);
+      console.log(rooms[roomId]);
     });
 
     socket.on('timer:start', (roomId: string) => {

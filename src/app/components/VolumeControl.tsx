@@ -7,13 +7,20 @@ interface VolumeControlProps {
   setVolume: (volume: number) => void;
   isMuted: boolean;
   setIsMuted: (isMuted: boolean) => void;
+  onInteraction: () => void; // ★追加
 }
 
-const VolumeControl: React.FC<VolumeControlProps> = ({ volume, setVolume, isMuted, setIsMuted }) => {
+const VolumeControl: React.FC<VolumeControlProps> = ({ volume, setVolume, isMuted, setIsMuted, onInteraction }) => {
   const [isSliderVisible, setIsSliderVisible] = useState(false);
 
   const handleMuteToggle = () => {
+    onInteraction(); // ★実行
     setIsMuted(!isMuted);
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onInteraction(); // ★実行
+    setVolume(parseFloat(e.target.value));
   };
 
   return (
@@ -47,7 +54,7 @@ const VolumeControl: React.FC<VolumeControlProps> = ({ volume, setVolume, isMute
           max="1"
           step="0.01"
           value={volume}
-          onChange={(e) => setVolume(parseFloat(e.target.value))}
+          onChange={handleVolumeChange} // ★変更
           className={`
             h-1 w-24 
             cursor-pointer 

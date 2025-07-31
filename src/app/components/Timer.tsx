@@ -5,7 +5,11 @@ import { useSearchParams } from 'next/navigation';
 import io from 'socket.io-client';
 import VolumeControl from './VolumeControl';
 
+// ★★★
+// コンポーネントの外で、たった一度だけソケットインスタンスを生成する。
+// これで、コンポーネントが再レンダリングされても、接続は一つに保たれる。
 const socket = io();
+// ★★★
 
 interface TimerState {
   time: number;
@@ -17,7 +21,7 @@ interface TimerState {
 const Timer = ({ roomId }: { roomId: string }) => {
   const [state, setState] = useState<TimerState>({ time: 25 * 60, isActive: false, phase: 'work', completedPomodoros: 0 });
   const [isMuted, setIsMuted] = useState(true);
-  const [volume, setVolume] = useState(0.5); // ボリュームの状態を追加 (0.0 to 1.0)
+  const [volume, setVolume] = useState(0.5);
   const searchParams = useSearchParams();
 
   const workAudioRef = useRef<HTMLAudioElement>(null);
@@ -25,32 +29,46 @@ const Timer = ({ roomId }: { roomId: string }) => {
   const [isInteracted, setIsInteracted] = useState(false);
 
   useEffect(() => {
-    // 新しいイベントリスナー
     const handleStateChanged = (newState: TimerState) => {
+      console.log('Received timer:stateChanged', newState);
       setState(newState);
     };
+
     const handleTick = (data: { time: number }) => {
       setState(prevState => ({ ...prevState, time: data.time }));
     };
 
+    // イベントリスナーを登録
     socket.on('timer:stateChanged', handleStateChanged);
     socket.on('timer:tick', handleTick);
 
-    if (roomId) {
-      const workTime = searchParams.get('work');
-      const breakTime = searchParams.get('break');
-      socket.emit('room:join', {
-        roomId,
-        settings: {
-          workTime: workTime ? parseInt(workTime, 10) : null,
-          breakTime: breakTime ? parseInt(breakTime, 10) : null,
-        }
-      });
+    // 接続が確立されたらルームに参加する
+    const onConnect = () => {
+      console.log('Socket connected, joining room...');
+      if (roomId) {
+        const workTime = searchParams.get('work');
+        const breakTime = searchParams.get('break');
+        socket.emit('room:join', {
+          roomId,
+          settings: {
+            workTime: workTime ? parseInt(workTime, 10) : null,
+            breakTime: breakTime ? parseInt(breakTime, 10) : null,
+          }
+        });
+      }
+    };
+
+    socket.on('connect', onConnect);
+
+    // すでに接続済みの場合は手動で呼び出す
+    if (socket.connected) {
+      onConnect();
     }
 
     return () => {
       socket.off('timer:stateChanged', handleStateChanged);
       socket.off('timer:tick', handleTick);
+      socket.off('connect', onConnect);
     };
   }, [roomId, searchParams]);
 
@@ -111,9 +129,8 @@ const Timer = ({ roomId }: { roomId: string }) => {
     socket.emit('timer:reset', roomId);
   };
 
-  // ★フェーズ切り替えハンドラを追加
   const handleTogglePhase = () => {
-    handleInteraction(); // ユーザー操作とみなす
+    handleInteraction();
     socket.emit('timer:togglePhase', roomId);
   };
 
@@ -133,7 +150,8 @@ const Timer = ({ roomId }: { roomId: string }) => {
           isMuted={isMuted} 
           setIsMuted={setIsMuted} 
           volume={volume} 
-          setVolume={setVolume} 
+          setVolume={setVolume}
+          onInteraction={handleInteraction} // ★追加
         />
       </div>
 
