@@ -35,7 +35,7 @@ const startTimer = (io: Server, roomId: string) => {
 
   const room = rooms[roomId];
   room.isActive = true;
-  // stopTimerForRoom(roomId); // 念のため、開始前に既存のタイマーをクリア
+  stopTimerForRoom(roomId); // 念のため、開始前に既存のタイマーをクリア
 
   room.interval = setInterval(() => {
     if (room.time > 0) {
@@ -88,7 +88,7 @@ const togglePhase = (io: Server, roomId: string) => {
     const room = rooms[roomId];
 
     // 現在のタイマーを停止
-    stopTimerForRoom(roomId);
+    // stopTimerForRoom(roomId);
 
     // フェーズを切り替える
     if (room.phase === 'work') {
