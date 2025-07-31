@@ -36,11 +36,15 @@ const startTimer = (io: Server, roomId: string) => {
 
   const room = rooms[roomId];
   room.isActive = true;
+  // ★追加：タイマー開始をクライアントに通知
+  io.to(roomId).emit('timer:stateChanged', room);
   stopTimerForRoom(roomId); // 念のため、開始前に既存のタイマーをクリア
 
   room.interval = setInterval(() => {
     if (room.time > 0) {
         room.time -= 1;
+        // 毎秒、時間だけを送信
+        io.to(roomId).emit('timer:tick', { time: room.time });
     } else {
         // フェーズ移行ロジック
         if (room.phase === 'work') {
@@ -51,16 +55,9 @@ const startTimer = (io: Server, roomId: string) => {
             room.phase = 'work';
             room.time = room.workDuration;
         }
+        // 状態が大きく変わった時だけ、全体の情報を送信
+        io.to(roomId).emit('timer:stateChanged', room);
     }
-
-    // 常に現在の状態を送信
-    io.to(roomId).emit('timer:tick', { 
-        time: room.time, 
-        isActive: room.isActive,
-        phase: room.phase,
-        completedPomodoros: room.completedPomodoros,
-    });
-
   }, 1000);
 };
 
@@ -70,7 +67,7 @@ const pauseTimer = (io: Server, roomId: string) => {
   stopTimerForRoom(roomId);
   rooms[roomId].isActive = false;
   // 停止した状態を即座に通知
-  io.to(roomId).emit('timer:tick', rooms[roomId]);
+  io.to(roomId).emit('timer:stateChanged', rooms[roomId]);
 };
 
 const resetTimer = (io: Server, roomId: string) => {
@@ -83,7 +80,7 @@ const resetTimer = (io: Server, roomId: string) => {
     room.time = room.workDuration;
     room.completedPomodoros = 0; // リセット
     // リセットした状態を即座に通知
-    io.to(roomId).emit('timer:tick', room);
+    io.to(roomId).emit('timer:stateChanged', room);
 }
 
 // ★フェーズを強制的に切り替える関数
@@ -104,7 +101,7 @@ const togglePhase = (io: Server, roomId: string) => {
     }
     // isActiveはそのまま（動いていれば動いたまま、止まっていれば止まったまま）
     // 新しいフェーズの状態を全員に通知
-    io.to(roomId).emit('timer:tick', room);
+    io.to(roomId).emit('timer:stateChanged', room);
 
     // フェーズを切り替えたら、常にタイマーを開始する
     startTimer(io, roomId);
@@ -138,7 +135,7 @@ app.prepare().then(() => {
         };
       }
       // 参加したユーザーに現在のタイマー状態を送信
-      socket.emit('timer:tick', rooms[roomId]);
+      socket.emit('timer:stateChanged', rooms[roomId]);
     });
 
     socket.on('timer:start', (roomId: string) => {

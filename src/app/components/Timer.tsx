@@ -25,9 +25,16 @@ const Timer = ({ roomId }: { roomId: string }) => {
   const [isInteracted, setIsInteracted] = useState(false);
 
   useEffect(() => {
-    socket.on('timer:tick', (newState: TimerState) => {
+    // 新しいイベントリスナー
+    const handleStateChanged = (newState: TimerState) => {
       setState(newState);
-    });
+    };
+    const handleTick = (data: { time: number }) => {
+      setState(prevState => ({ ...prevState, time: data.time }));
+    };
+
+    socket.on('timer:stateChanged', handleStateChanged);
+    socket.on('timer:tick', handleTick);
 
     if (roomId) {
       const workTime = searchParams.get('work');
@@ -42,7 +49,8 @@ const Timer = ({ roomId }: { roomId: string }) => {
     }
 
     return () => {
-      socket.off('timer:tick');
+      socket.off('timer:stateChanged', handleStateChanged);
+      socket.off('timer:tick', handleTick);
     };
   }, [roomId, searchParams]);
 
