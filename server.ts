@@ -19,6 +19,7 @@ interface RoomState {
   workDuration: number;
   breakDuration: number;
   interval?: NodeJS.Timeout;
+  completedPomodoros: number; // 追加：完了したポモドーロの回数
 }
 const rooms: Record<string, RoomState> = {};
 
@@ -43,6 +44,7 @@ const startTimer = (io: Server, roomId: string) => {
     } else {
         // フェーズ移行ロジック
         if (room.phase === 'work') {
+            room.completedPomodoros += 1; // ★ポモドーロ完了！
             room.phase = 'break';
             room.time = room.breakDuration;
         } else {
@@ -55,7 +57,8 @@ const startTimer = (io: Server, roomId: string) => {
     io.to(roomId).emit('timer:tick', { 
         time: room.time, 
         isActive: room.isActive,
-        phase: room.phase
+        phase: room.phase,
+        completedPomodoros: room.completedPomodoros,
     });
 
   }, 1000);
@@ -78,6 +81,7 @@ const resetTimer = (io: Server, roomId: string) => {
     room.isActive = false;
     room.phase = 'work';
     room.time = room.workDuration;
+    room.completedPomodoros = 0; // リセット
     // リセットした状態を即座に通知
     io.to(roomId).emit('timer:tick', room);
 }
@@ -129,7 +133,8 @@ app.prepare().then(() => {
           breakDuration,
           time: workDuration,
           isActive: false,
-          phase: 'work'
+          phase: 'work',
+          completedPomodoros: 0 // 初期化
         };
       }
       // 参加したユーザーに現在のタイマー状態を送信

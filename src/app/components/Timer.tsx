@@ -11,10 +11,11 @@ interface TimerState {
   time: number;
   isActive: boolean;
   phase: 'work' | 'break';
+  completedPomodoros: number;
 }
 
 const Timer = ({ roomId }: { roomId: string }) => {
-  const [state, setState] = useState<TimerState>({ time: 25 * 60, isActive: false, phase: 'work' });
+  const [state, setState] = useState<TimerState>({ time: 25 * 60, isActive: false, phase: 'work', completedPomodoros: 0 });
   const [isMuted, setIsMuted] = useState(true);
   const [volume, setVolume] = useState(0.5); // ボリュームの状態を追加 (0.0 to 1.0)
   const searchParams = useSearchParams();
@@ -128,6 +129,9 @@ const Timer = ({ roomId }: { roomId: string }) => {
       <div className={`p-8 rounded-lg transition-colors duration-500 ${bgColor}`}>
           <h2 className="text-3xl font-bold text-white mb-4 text-center">{phaseText}</h2>
           <div className="text-9xl font-bold mb-8 text-white text-center">{formatTime(state.time)}</div>
+          <div className="text-2xl text-white text-center mb-4">
+            Completed Pomodoros: {state.completedPomodoros}
+          </div>
           <div className="flex justify-center space-x-4">
               <button
               onClick={handleToggle}
