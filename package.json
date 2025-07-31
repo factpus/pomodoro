@@ -2,6 +2,10 @@
   "name": "pomodoro-app",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
+  "engines": {
+    "node": "18.x"
+  },
   "scripts": {
     "dev": "ts-node --project tsconfig.server.json server.ts",
     "build": "next build && tsc --project tsconfig.server.json",
