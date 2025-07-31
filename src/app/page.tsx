@@ -13,39 +13,63 @@ export default function Home() {
   const joinRoom = (e: React.FormEvent) => {
     e.preventDefault();
     if (roomId.trim()) {
-      // URLクエリとして時間設定を追加
       const query = `?work=${workTime}&break=${breakTime}`;
       router.push(`/room/${roomId.trim()}${query}`);
     }
   };
 
+  const generateRandomRoomId = () => {
+    const randomId = Math.random().toString(36).substring(2, 8);
+    setRoomId(randomId);
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-800">
-      <div className="text-center">
-        <h1 className="text-5xl font-bold mb-2 text-white">Pomodoro Timer</h1>
-        <p className="text-lg text-gray-400 mb-8">Create or Join a Room</p>
-      </div>
-      <form onSubmit={joinRoom} className="flex flex-col items-center">
-        <input
-          type="text"
-          value={roomId}
-          onChange={(e) => setRoomId(e.target.value)}
-          placeholder="Enter Room Name"
-          className="text-black text-center text-2xl p-2 border rounded mb-4"
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 text-white p-4 sm:p-8">
+      <div className="w-full max-w-md bg-gray-800 rounded-2xl shadow-2xl p-8 space-y-8">
+        
+        <div className="text-center">
+          <h1 className="text-4xl sm:text-5xl font-bold text-white">Pomodoro Together</h1>
+          <p className="text-gray-400 mt-2">Create or join a room to start focusing.</p>
+        </div>
+
+        <TimeSettings 
+          workTime={workTime} 
+          setWorkTime={setWorkTime} 
+          breakTime={breakTime} 
+          setBreakTime={setBreakTime} 
         />
-        <button
-          type="submit"
-          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded text-lg"
-        >
-          Join Room
-        </button>
-      </form>
-      <TimeSettings 
-        workTime={workTime} 
-        setWorkTime={setWorkTime} 
-        breakTime={breakTime} 
-        setBreakTime={setBreakTime} 
-      />
+
+        <form onSubmit={joinRoom} className="space-y-6">
+          <div className="space-y-2">
+            <label htmlFor="roomId" className="text-sm font-medium text-gray-300">Room Name</label>
+            <div className="flex space-x-2">
+              <input
+                id="roomId"
+                type="text"
+                value={roomId}
+                onChange={(e) => setRoomId(e.target.value)}
+                placeholder="your-room-name"
+                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                required
+              />
+              <button type="button" onClick={generateRandomRoomId} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition">
+                🎲
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-800"
+          >
+            Join & Start Focusing
+          </button>
+        </form>
+      </div>
+
+      <footer className="text-center mt-8 text-gray-500">
+          <p>Made with ❤️ by you & Gemini</p>
+      </footer>
     </main>
   );
 }

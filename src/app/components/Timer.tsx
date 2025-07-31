@@ -123,46 +123,66 @@ const Timer = ({ roomId }: { roomId: string }) => {
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const phaseText = state.phase === 'work' ? 'Work Time' : 'Break Time';
-  const bgColor = state.phase === 'work' ? 'bg-red-500' : 'bg-green-500';
+  const phaseText = state.phase === 'work' ? 'Focus' : 'Break';
+  const phaseColor = state.phase === 'work' ? 'text-red-400' : 'text-green-400';
 
   return (
-    <div className="relative">
-      <VolumeControl 
-        isMuted={isMuted} 
-        setIsMuted={setIsMuted} 
-        volume={volume} 
-        setVolume={setVolume} 
-      />
-      <div className={`p-8 rounded-lg transition-colors duration-500 ${bgColor}`}>
-          <h2 className="text-3xl font-bold text-white mb-4 text-center">{phaseText}</h2>
-          <div className="text-9xl font-bold mb-8 text-white text-center">{formatTime(state.time)}</div>
-          <div className="text-2xl text-white text-center mb-4">
-            Completed Pomodoros: {state.completedPomodoros}
-          </div>
-          <div className="flex justify-center space-x-4">
-              <button
-              onClick={handleToggle}
-              className="bg-white text-gray-800 font-bold py-2 px-4 rounded w-32"
-              >
-              {state.isActive ? 'Pause' : 'Start'}
-              </button>
-              <button
-              onClick={handleReset}
-              className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded w-32"
-              >
-              Reset
-              </button>
-              {/* ★フェーズ切り替えボタンを追加 */}
-              <button
-                onClick={handleTogglePhase}
-                className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded w-32"
-              >
-                Toggle Phase
-              </button>
-          </div>
+    <div className="w-full max-w-2xl mx-auto bg-gray-900 rounded-2xl shadow-2xl p-8 flex flex-col items-center text-white relative">
+      <div className="absolute top-4 left-4">
+        <VolumeControl 
+          isMuted={isMuted} 
+          setIsMuted={setIsMuted} 
+          volume={volume} 
+          setVolume={setVolume} 
+        />
       </div>
-      {/* 非表示のオーディオプレーヤー */}
+
+      <div className="text-center mb-8">
+        <h2 className={`text-3xl font-bold ${phaseColor} transition-colors duration-500`}>{phaseText}</h2>
+        <p className="text-gray-400">Room: {roomId}</p>
+      </div>
+
+      <div className="text-8xl sm:text-9xl font-bold mb-8 tabular-nums">
+        {formatTime(state.time)}
+      </div>
+
+      <div className="flex items-center justify-center space-x-4 sm:space-x-8 mb-8">
+        <button
+          onClick={handleReset}
+          className="p-4 bg-gray-800 hover:bg-gray-700 rounded-full transition-all duration-300 transform hover:scale-110"
+          aria-label="Reset Timer"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-8 sm:w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5M4 4l16 16" /></svg>
+        </button>
+
+        <button
+          onClick={handleToggle}
+          className={`p-6 rounded-full transition-all duration-300 transform hover:scale-110 text-white ${state.isActive ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+          aria-label={state.isActive ? 'Pause Timer' : 'Start Timer'}
+        >
+          {state.isActive ? (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 sm:h-12 sm:w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" /></svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 sm:h-12 sm:w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /></svg>
+          )}
+        </button>
+
+        <button
+          onClick={handleTogglePhase}
+          className="p-4 bg-gray-800 hover:bg-gray-700 rounded-full transition-all duration-300 transform hover:scale-110"
+          aria-label="Toggle Phase"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-8 sm:w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+        </button>
+      </div>
+
+      <div className="text-2xl text-yellow-400 flex items-center space-x-2">
+        <span>🍅</span>
+        <span>x</span>
+        <span className="font-bold">{state.completedPomodoros}</span>
+      </div>
+
+      {/* Hidden audio players */}
       <audio ref={workAudioRef} src="/music/work.mp3" loop preload="auto"></audio>
       <audio ref={breakAudioRef} src="/music/break.mp3" loop preload="auto"></audio>
     </div>

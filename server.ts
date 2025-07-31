@@ -87,11 +87,13 @@ const resetTimer = (io: Server, roomId: string) => {
 const togglePhase = (io: Server, roomId: string) => {
     if (!rooms[roomId]) return;
     const room = rooms[roomId];
+    const wasActive = room.isActive; // ★タイマーが動いていたか覚えておく
 
-    // 現在のタイマーを停止
-    // stopTimerForRoom(roomId);
+    // 1. タイマーを完全に停止し、状態も「非アクティブ」に更新する
+    stopTimerForRoom(roomId);
+    room.isActive = false;
 
-    // フェーズを切り替える
+    // 2. フェーズを切り替える
     if (room.phase === 'work') {
         room.phase = 'break';
         room.time = room.breakDuration;
@@ -99,12 +101,14 @@ const togglePhase = (io: Server, roomId: string) => {
         room.phase = 'work';
         room.time = room.workDuration;
     }
-    // isActiveはそのまま（動いていれば動いたまま、止まっていれば止まったまま）
-    // 新しいフェーズの状態を全員に通知
-    io.to(roomId).emit('timer:stateChanged', room);
 
-    // フェーズを切り替えたら、常にタイマーを開始する
-    startTimer(io, roomId);
+    // 3. もし元々タイマーが動いていたなら、新しい状態でタイマーを再開する
+    if (wasActive) {
+        startTimer(io, roomId); // startTimerがisActiveをtrueにし、stateChangedをemitする
+    } else {
+        // もし止まっていたなら、新しい状態を通知するだけ
+        io.to(roomId).emit('timer:stateChanged', room);
+    }
 };
 
 app.prepare().then(() => {

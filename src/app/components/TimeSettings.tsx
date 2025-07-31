@@ -7,33 +7,30 @@ interface TimeSettingsProps {
   setBreakTime: (time: number) => void;
 }
 
-const TimeSettings: React.FC<TimeSettingsProps> = ({ workTime, setWorkTime, breakTime, setBreakTime }) => {
+const TimeSettings = ({ workTime, setWorkTime, breakTime, setBreakTime }: TimeSettingsProps) => {
   return (
-    <div className="mt-8 p-6 bg-gray-700 rounded-lg">
-      <h3 className="text-lg font-bold text-white mb-4 text-center">Timer Settings (minutes)</h3>
-      <div className="flex justify-center items-center space-x-4">
-        <div>
-          <label htmlFor="work-time" className="block text-sm font-medium text-gray-300">Work</label>
-          <input
-            id="work-time"
-            type="number"
-            value={workTime}
-            onChange={(e) => setWorkTime(parseInt(e.target.value, 10))}
-            className="w-24 p-2 text-black rounded"
-            min="1"
-          />
-        </div>
-        <div>
-          <label htmlFor="break-time" className="block text-sm font-medium text-gray-300">Break</label>
-          <input
-            id="break-time"
-            type="number"
-            value={breakTime}
-            onChange={(e) => setBreakTime(parseInt(e.target.value, 10))}
-            className="w-24 p-2 text-black rounded"
-            min="1"
-          />
-        </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <div className="space-y-2">
+        <label htmlFor="workTime" className="text-sm font-medium text-gray-300">Work Duration (minutes)</label>
+        <input
+          id="workTime"
+          type="number"
+          value={workTime}
+          onChange={(e) => setWorkTime(Number(e.target.value))}
+          className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+          min="1"
+        />
+      </div>
+      <div className="space-y-2">
+        <label htmlFor="breakTime" className="text-sm font-medium text-gray-300">Break Duration (minutes)</label>
+        <input
+          id="breakTime"
+          type="number"
+          value={breakTime}
+          onChange={(e) => setBreakTime(Number(e.target.value))}
+          className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+          min="1"
+        />
       </div>
     </div>
   );
