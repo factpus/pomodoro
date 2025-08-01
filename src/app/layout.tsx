@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Pomodoro Together - 集中力を高める共有ポモドーロタイマー",
   description: "オンラインで友達や同僚と集中できる共有ポモドーロタイマー。作業と休憩を効率的に管理し、生産性を向上させましょう。",
+  verification: {
+    google: "cYKJ41JXEUcmR_I0UyJusbqkQw65TZNhlKUPkr8HN6E",
+  },
 };
 
 export default function RootLayout({
