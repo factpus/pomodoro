@@ -68,7 +68,7 @@ export default function Home() {
       </div>
 
       <footer className="text-center mt-8 text-gray-500">
-          <p>Made with ❤️ by you & Gemini</p>
+          <p>Made with</p>
       </footer>
     </main>
   );
