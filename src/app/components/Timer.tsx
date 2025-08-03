@@ -201,8 +201,8 @@ const Timer = ({ roomId }: { roomId: string }) => {
       </div>
 
       {/* Hidden audio players */}
-      <audio ref={workAudioRef} src="/music/work.mp3" loop preload="auto"></audio>
-      <audio ref={breakAudioRef} src="/music/break.mp3" loop preload="auto"></audio>
+      <audio ref={workAudioRef} src="/music/work.wav" loop preload="auto"></audio>
+      <audio ref={breakAudioRef} src="/music/break.wav" loop preload="auto"></audio>
     </div>
   );
 };
