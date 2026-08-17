@@ -38,7 +38,6 @@ const Timer = ({ roomId }: { roomId: string }) => {
 
   useEffect(() => {
     if (!socket) {
-      setState({ time: workDuration, isActive: false, phase: 'work', completedPomodoros: 0 });
       return;
     }
 
