@@ -1,15 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import io from 'socket.io-client';
 import VolumeControl from './VolumeControl';
 
-// ★★★
-// コンポーネントの外で、たった一度だけソケットインスタンスを生成する。
-// これで、コンポーネントが再レンダリングされても、接続は一つに保たれる。
-const socket = io();
-// ★★★
+const realtimeServerUrl = process.env.NEXT_PUBLIC_SOCKET_SERVER_URL;
+const socket = realtimeServerUrl
+  ? io(realtimeServerUrl, { autoConnect: false })
+  : null;
 
 interface TimerState {
   time: number;
@@ -19,18 +18,31 @@ interface TimerState {
 }
 
 const Timer = ({ roomId }: { roomId: string }) => {
-  const [state, setState] = useState<TimerState>({ time: 25 * 60, isActive: false, phase: 'work', completedPomodoros: 0 });
+  const searchParams = useSearchParams();
+  const workDuration = useMemo(
+    () => Math.max(1, Number(searchParams.get('work')) || 25) * 60,
+    [searchParams],
+  );
+  const breakDuration = useMemo(
+    () => Math.max(1, Number(searchParams.get('break')) || 5) * 60,
+    [searchParams],
+  );
+  const [state, setState] = useState<TimerState>({ time: workDuration, isActive: false, phase: 'work', completedPomodoros: 0 });
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [volume, setVolume] = useState(0.5);
-  const searchParams = useSearchParams();
 
   const workAudioRef = useRef<HTMLAudioElement>(null);
   const breakAudioRef = useRef<HTMLAudioElement>(null);
   const [isInteracted, setIsInteracted] = useState(false);
 
   useEffect(() => {
+    if (!socket) {
+      setState({ time: workDuration, isActive: false, phase: 'work', completedPomodoros: 0 });
+      return;
+    }
+
     const handleStateChanged = (newState: TimerState) => {
-      console.log('Received timer:stateChanged', newState);
       setState(newState);
     };
 
@@ -44,21 +56,23 @@ const Timer = ({ roomId }: { roomId: string }) => {
 
     // 接続が確立されたらルームに参加する
     const onConnect = () => {
-      console.log('Socket connected, joining room...');
+      setIsRealtimeConnected(true);
       if (roomId) {
-        const workTime = searchParams.get('work');
-        const breakTime = searchParams.get('break');
         socket.emit('room:join', {
           roomId,
           settings: {
-            workTime: workTime ? parseInt(workTime, 10) : null,
-            breakTime: breakTime ? parseInt(breakTime, 10) : null,
+            workTime: workDuration / 60,
+            breakTime: breakDuration / 60,
           }
         });
       }
     };
 
+    const onDisconnect = () => setIsRealtimeConnected(false);
+
     socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    socket.connect();
 
     // すでに接続済みの場合は手動で呼び出す
     if (socket.connected) {
@@ -69,8 +83,32 @@ const Timer = ({ roomId }: { roomId: string }) => {
       socket.off('timer:stateChanged', handleStateChanged);
       socket.off('timer:tick', handleTick);
       socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.disconnect();
     };
-  }, [roomId, searchParams]);
+  }, [roomId, workDuration, breakDuration]);
+
+  useEffect(() => {
+    if (!state.isActive || isRealtimeConnected) return;
+
+    const timer = window.setInterval(() => {
+      setState((previousState) => {
+        if (previousState.time > 1) {
+          return { ...previousState, time: previousState.time - 1 };
+        }
+
+        const completedWork = previousState.phase === 'work';
+        return {
+          ...previousState,
+          phase: completedWork ? 'break' : 'work',
+          time: completedWork ? breakDuration : workDuration,
+          completedPomodoros: previousState.completedPomodoros + (completedWork ? 1 : 0),
+        };
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [state.isActive, isRealtimeConnected, workDuration, breakDuration]);
 
   // オーディオのミュートとボリュームを同期
   useEffect(() => {
@@ -117,21 +155,35 @@ const Timer = ({ roomId }: { roomId: string }) => {
 
   const handleToggle = () => {
     handleInteraction();
-    if (state.isActive) {
+    if (socket && isRealtimeConnected && state.isActive) {
       socket.emit('timer:pause', roomId);
-    } else {
+    } else if (socket && isRealtimeConnected) {
       socket.emit('timer:start', roomId);
+    } else {
+      setState((previousState) => ({ ...previousState, isActive: !previousState.isActive }));
     }
   };
 
   const handleReset = () => {
     handleInteraction();
-    socket.emit('timer:reset', roomId);
+    if (socket && isRealtimeConnected) {
+      socket.emit('timer:reset', roomId);
+    } else {
+      setState({ time: workDuration, isActive: false, phase: 'work', completedPomodoros: 0 });
+    }
   };
 
   const handleTogglePhase = () => {
     handleInteraction();
-    socket.emit('timer:togglePhase', roomId);
+    if (socket && isRealtimeConnected) {
+      socket.emit('timer:togglePhase', roomId);
+    } else {
+      setState((previousState) => ({
+        ...previousState,
+        phase: previousState.phase === 'work' ? 'break' : 'work',
+        time: previousState.phase === 'work' ? breakDuration : workDuration,
+      }));
+    }
   };
 
   const formatTime = (time: number) => {
@@ -158,6 +210,9 @@ const Timer = ({ roomId }: { roomId: string }) => {
       <div className="text-center mb-8">
         <h2 className={`text-3xl font-bold ${phaseColor} transition-colors duration-500`}>{phaseText}</h2>
         <p className="text-gray-400">Room: {roomId}</p>
+        <p className="mt-2 text-xs text-gray-500">
+          {isRealtimeConnected ? 'Shared mode' : 'Local mode'}
+        </p>
       </div>
 
       <div className="text-8xl sm:text-9xl font-bold mb-8 tabular-nums">

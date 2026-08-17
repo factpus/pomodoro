@@ -23,6 +23,22 @@ interface RoomState {
 }
 const rooms: Record<string, RoomState> = {};
 
+const getClientState = ({
+  time,
+  isActive,
+  phase,
+  workDuration,
+  breakDuration,
+  completedPomodoros,
+}: RoomState) => ({
+  time,
+  isActive,
+  phase,
+  workDuration,
+  breakDuration,
+  completedPomodoros,
+});
+
 // --- 安全なタイマー停止関数 --- 
 const stopTimerForRoom = (roomId: string) => {
     if (rooms[roomId] && rooms[roomId].interval) {
@@ -37,8 +53,7 @@ const startTimer = (io: Server, roomId: string) => {
   const room = rooms[roomId];
   room.isActive = true;
   // ★追加：タイマー開始をクライアントに通知 (intervalを除外)
-  const { interval, ...clientState } = room;
-  io.to(roomId).emit('timer:stateChanged', clientState);
+  io.to(roomId).emit('timer:stateChanged', getClientState(room));
   stopTimerForRoom(roomId); // 念のため、開始前に既存のタイマーをクリア
 
   room.interval = setInterval(() => {
@@ -57,8 +72,7 @@ const startTimer = (io: Server, roomId: string) => {
             room.time = room.workDuration;
         }
         // 状態が大きく変わった時だけ、全体の情報を送信 (intervalを除外)
-        const { interval, ...clientState } = room;
-        io.to(roomId).emit('timer:stateChanged', clientState);
+        io.to(roomId).emit('timer:stateChanged', getClientState(room));
     }
   }, 1000);
 };
@@ -69,8 +83,7 @@ const pauseTimer = (io: Server, roomId: string) => {
   stopTimerForRoom(roomId);
   rooms[roomId].isActive = false;
   // 停止した状態を即座に通知 (intervalを除外)
-  const { interval, ...clientState } = rooms[roomId];
-  io.to(roomId).emit('timer:stateChanged', clientState);
+  io.to(roomId).emit('timer:stateChanged', getClientState(rooms[roomId]));
 };
 
 const resetTimer = (io: Server, roomId: string) => {
@@ -83,8 +96,7 @@ const resetTimer = (io: Server, roomId: string) => {
     room.time = room.workDuration;
     room.completedPomodoros = 0; // リセット
     // リセットした状態を即座に通知 (intervalを除外)
-    const { interval, ...clientState } = room;
-    io.to(roomId).emit('timer:stateChanged', clientState);
+    io.to(roomId).emit('timer:stateChanged', getClientState(room));
 }
 
 // ★フェーズを強制的に切り替える関数
@@ -111,8 +123,7 @@ const togglePhase = (io: Server, roomId: string) => {
         startTimer(io, roomId); // startTimerがisActiveをtrueにし、stateChangedをemitする
     } else {
         // もし止まっていたなら、新しい状態を通知するだけ (intervalを除外)
-        const { interval, ...clientState } = room;
-        io.to(roomId).emit('timer:stateChanged', clientState);
+        io.to(roomId).emit('timer:stateChanged', getClientState(room));
     }
 };
 
@@ -145,8 +156,7 @@ app.prepare().then(() => {
       }
       // 参加したユーザーに現在のタイマー状態を送信
       // 参加したユーザーに現在のタイマー状態を送信 (intervalを除外)
-      const { interval, ...clientState } = rooms[roomId];
-      socket.emit('timer:stateChanged', clientState);
+      socket.emit('timer:stateChanged', getClientState(rooms[roomId]));
       console.log(rooms[roomId]);
     });
 

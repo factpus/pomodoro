@@ -3,13 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": "18.x"
+    "node": "22.x"
   },
   "scripts": {
-    "dev": "ts-node --project tsconfig.server.json server.ts",
-    "build": "next build && tsc --project tsconfig.server.json",
-    "start": "NODE_ENV=production node dist/server.js",
-    "lint": "next lint"
+    "dev": "next dev",
+    "dev:realtime": "ts-node --project tsconfig.server.json server.ts",
+    "build": "next build",
+    "build:realtime": "tsc --project tsconfig.server.json",
+    "start": "next start",
+    "start:realtime": "node dist/server.js",
+    "lint": "eslint ."
   },
   "dependencies": {
     "next": "15.4.3",
