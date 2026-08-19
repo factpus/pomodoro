@@ -1,75 +1,64 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import TimeSettings from '@/app/components/TimeSettings';
+import { useState } from 'react';
+import TimeSettings, { type TimeSettingsValue } from '@/app/components/TimeSettings';
+import { clientId, hostTokenKey } from '@/lib/client/identity';
+import { createSharedRoom } from '@/lib/client/rooms';
+
+const initialSettings: TimeSettingsValue = { focusMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 };
 
 export default function Home() {
-  const [roomId, setRoomId] = useState('');
-  const [workTime, setWorkTime] = useState(25);
-  const [breakTime, setBreakTime] = useState(5);
   const router = useRouter();
+  const [roomId, setRoomId] = useState('');
+  const [settings, setSettings] = useState(initialSettings);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const normalizedRoomId = roomId.trim().toLowerCase();
 
-  const joinRoom = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (roomId.trim()) {
-      const query = `?work=${workTime}&break=${breakTime}`;
-      router.push(`/room/${roomId.trim()}${query}`);
+  async function createRoom(event: React.FormEvent) {
+    event.preventDefault(); setBusy(true); setError('');
+    try {
+      const result = await createSharedRoom({ roomId: normalizedRoomId || undefined, settings }, clientId());
+      sessionStorage.setItem(hostTokenKey(result.snapshot.roomId), result.hostToken);
+      router.push(`/room/${result.snapshot.roomId}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'ルームを作成できませんでした。'); setBusy(false);
     }
-  };
+  }
 
-  const generateRandomRoomId = () => {
-    const randomId = Math.random().toString(36).substring(2, 8);
-    setRoomId(randomId);
-  };
+  function joinRoom() {
+    if (!normalizedRoomId) { setError('参加するルーム名を入力してください。'); return; }
+    router.push(`/room/${normalizedRoomId}`);
+  }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-900 text-white p-4 sm:p-8">
-      <div className="w-full max-w-md bg-gray-800 rounded-2xl shadow-2xl p-8 space-y-8">
-        
-        <div className="text-center">
-          <h1 className="text-4xl sm:text-5xl font-bold text-white">Pomodoro Together</h1>
-          <p className="text-gray-400 mt-2">Create or join a room to start focusing.</p>
+    <main className="shell">
+      <section className="hero" aria-labelledby="page-title">
+        <div>
+          <p className="eyebrow">一緒なら、集中は続けやすい。</p>
+          <h1 id="page-title">Pomodoro Together</h1>
+          <p className="lead">同じタイマーを仲間と共有して、集中と休憩のリズムを揃えよう。</p>
         </div>
-
-        <TimeSettings 
-          workTime={workTime} 
-          setWorkTime={setWorkTime} 
-          breakTime={breakTime} 
-          setBreakTime={setBreakTime} 
-        />
-
-        <form onSubmit={joinRoom} className="space-y-6">
-          <div className="space-y-2">
-            <label htmlFor="roomId" className="text-sm font-medium text-gray-300">Room Name</label>
-            <div className="flex space-x-2">
-              <input
-                id="roomId"
-                type="text"
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value)}
-                placeholder="your-room-name"
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                required
-              />
-              <button type="button" onClick={generateRandomRoomId} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition">
-                🎲
-              </button>
+        <form onSubmit={createRoom} className="panel space-y-6">
+          <div>
+            <label htmlFor="room-id" className="label">ルーム名</label>
+            <div className="mt-2 flex gap-2">
+              <input id="room-id" className="input" value={roomId} onChange={(event) => setRoomId(event.target.value)} placeholder="空欄なら自動生成" maxLength={50} pattern="[A-Za-z0-9-]+" />
+              <button type="button" className="icon-button" onClick={() => setRoomId(crypto.randomUUID().slice(0, 8))} aria-label="ランダムなルーム名を生成">🎲</button>
             </div>
           </div>
-
-          <button
-            type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-800"
-          >
-            Join & Start Focusing
-          </button>
+          <TimeSettings value={settings} onChange={setSettings} />
+          {error && <p className="error" role="alert">{error}</p>}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button className="button button-primary" type="submit" disabled={busy}>{busy ? '作成中…' : 'ルームを作る'}</button>
+            <button className="button button-secondary" type="button" onClick={joinRoom} disabled={busy}>既存ルームに参加</button>
+          </div>
+          <p className="hint">設定はルーム作成者が決めます。参加時には既存ルームの設定が使われます。</p>
         </form>
-      </div>
-
-      <footer className="text-center mt-8 text-gray-500">
-          <p>Made by factpus</p>
-      </footer>
+      </section>
+      <footer><Link href="/about">このアプリについて</Link><span>Made by factpus</span></footer>
     </main>
   );
 }

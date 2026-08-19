@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pomodoro Together
 
-## Getting Started
+離れた仲間と同じ集中・休憩タイマーを共有できる、ポートフォリオ向けWebアプリです。
 
-First, run the development server:
+公開URL: [Pomodoro Together](https://pomodoro-app-five-khaki.vercel.app/)
+
+## 主な機能
+
+- ルームURLによる複数人同期（1秒以内）
+- ホスト・参加者の権限分離
+- 終了時刻を基準にした、タブ休止に強いタイマー
+- 切断後の自動再接続と状態復元
+- 参加人数、招待リンク、プリセット、長休憩、ブラウザ通知
+- レスポンシブUI、キーボード操作、PWA、OG画像
+
+## 技術構成
+
+- Next.js 16 / React 19 / TypeScript
+- Vercel Functions
+- Upstash Redis（ルーム状態、TTL、分散ロック、レート制限）
+- Zod（API入力検証）
+- Vitest / Playwright / GitHub Actions
+
+VercelのFunctionで常駐Socket.IOサーバーを動かす構成は廃止しました。Redisを正とするHTTP同期方式により、Functionの再起動・複数インスタンス・再デプロイに耐える構成です。詳細は [アーキテクチャ](docs/ARCHITECTURE.md) と [改善記録](docs/IMPROVEMENT_PLAN.md) を参照してください。
+
+## ローカル起動
 
 ```bash
+npm install
+copy .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Redis環境変数が未設定の開発環境ではメモリストアを使用します。本番環境では安全のためRedisが必須です。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Vercel環境変数
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Vercel MarketplaceでUpstash Redisをプロジェクトへ接続すると、通常は次の値が自動設定されます。
 
-## Learn More
+```text
+UPSTASH_REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN
+```
 
-To learn more about Next.js, take a look at the following resources:
+`KV_REST_API_URL` / `KV_REST_API_TOKEN` も後方互換として利用できます。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 検証
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run check
+npm run test:e2e
+npm audit --omit=dev --audit-level=high
+```
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+CIではlint、型検査、単体テスト、カバレッジ、本番ビルド、依存関係監査、2ブラウザ同期E2Eを実行します。
