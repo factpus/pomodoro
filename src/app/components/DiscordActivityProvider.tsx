@@ -44,6 +44,8 @@ export default function DiscordActivityProvider({ children }: { children: React.
   const router = useRouter();
   const pathname = usePathname();
   const sdkRef = useRef<DiscordSDK | null>(null);
+  const accessTokenRef = useRef<string | null>(null);
+  const activityQueryRef = useRef('');
   const [embedded, setEmbedded] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [participants, setParticipants] = useState(0);
@@ -53,6 +55,7 @@ export default function DiscordActivityProvider({ children }: { children: React.
     const applicationId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
     const params = new URLSearchParams(window.location.search);
     if (!applicationId || !params.has('frame_id') || !params.has('instance_id') || !params.has('platform')) return;
+    activityQueryRef.current = window.location.search;
     let cancelled = false;
     let cleanup: (() => Promise<unknown>) | undefined;
 
@@ -84,17 +87,8 @@ export default function DiscordActivityProvider({ children }: { children: React.
         const authentication = await sdk.commands.authenticate({ access_token: token.accessToken });
         if (!authentication) throw new Error('Discordユーザーを認証できませんでした。');
         if (cancelled) return;
+        accessTokenRef.current = token.accessToken;
         setAuthenticated(true);
-
-        if (window.location.pathname === '/') {
-          const result = await responseJson<{ snapshot: RoomSnapshot; hostToken: string | null }>(await fetch('/api/discord/activity-room', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.accessToken}` },
-            body: JSON.stringify({ instanceId: sdk.instanceId, clientId: clientId() }),
-          }));
-          if (result.hostToken) sessionStorage.setItem(hostTokenKey(result.snapshot.roomId), result.hostToken);
-          router.replace(`/room/${result.snapshot.roomId}${window.location.search}`);
-        }
       } catch (caught) {
         if (!cancelled) setError(caught instanceof Error ? caught.message : 'Discordとの接続に失敗しました。');
       }
@@ -102,9 +96,37 @@ export default function DiscordActivityProvider({ children }: { children: React.
 
     return () => {
       cancelled = true;
+      accessTokenRef.current = null;
       if (cleanup) void cleanup();
     };
-  }, [router]);
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated || pathname !== '/') return;
+    const sdk = sdkRef.current;
+    const accessToken = accessTokenRef.current;
+    if (!sdk || !accessToken) return;
+    const controller = new AbortController();
+    setError('');
+
+    void (async () => {
+      try {
+        const result = await responseJson<{ snapshot: RoomSnapshot; hostToken: string | null }>(await fetch('/api/discord/activity-room', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ instanceId: sdk.instanceId, clientId: clientId() }),
+          signal: controller.signal,
+        }));
+        if (controller.signal.aborted) return;
+        if (result.hostToken) sessionStorage.setItem(hostTokenKey(result.snapshot.roomId), result.hostToken);
+        router.replace(`/room/${result.snapshot.roomId}${activityQueryRef.current}`);
+      } catch (caught) {
+        if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'Discordルームへ参加できませんでした。');
+      }
+    })();
+
+    return () => controller.abort();
+  }, [authenticated, pathname, router]);
 
   const invite = useCallback(async () => {
     if (!sdkRef.current) throw new Error('Discord Activityに接続されていません。');
