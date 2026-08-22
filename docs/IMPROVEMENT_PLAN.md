@@ -38,6 +38,10 @@ Vercelの500エラー自体はFramework Presetが `Other` だったことが直�
 - Discord Activity SDK、参加人数、招待ダイアログ、Webフォールバックを追加
 - 使い方、FAQ、Privacy、Terms、Contact、sitemap、robotsを追加
 - CSP、Referrer Policy、Permissions Policyなどのセキュリティヘッダーを追加
+- Activityインスタンスごとの自動ルーム参加と最小Rich Presenceを追加
+- `/pomodoro` の非公開ホスト導線と公開参加ボタンを分離
+- Webhookの429再試行、失効時自動解除、Discord連携テストを追加
+- ヘルスチェック、構造化ログ、運用・監視手順を追加
 
 ## 本番リリースの最終条件
 
@@ -85,7 +89,7 @@ Redis未接続の本番では、誤って不完全な共有モードを提供し
 - 通常ブラウザ、Discordデスクトップ、Discord Web、iOS、Androidで動作確認
 - CSP、OAuth、権限、プライバシーポリシー、利用規約、配布・審査要件を整備
 
-Developer PortalのApplication作成、URL Mapping、環境変数の投入と実機審査は外部設定のため未実施。手順は `DISCORD_SETUP.md` に固定した。
+Developer PortalのApplication作成、URL Mapping、環境変数の投入と実機審査は外部設定のため未実施。手順は `DISCORD_SETUP.md` に固定した。実装済みという表記はコード側を指し、デスクトップ・Web・モバイル実機確認の完了を意味しない。
 
 ### Phase 4: LINE Bot（需要確認後・意図的に保留）
 
@@ -138,4 +142,6 @@ Developer PortalのApplication作成、URL Mapping、環境変数の投入と実
 - 2クライアントの状態同期
 - ホスト権限と参加者の操作禁止
 - オフライン後の再接続と状態復元
+- Discord署名検証、OAuth交換、Activity自動ルーム、Webhook再試行
+- ヘルスチェックとキャッシュ禁止
 - lint、TypeScript、本番ビルド、依存関係監査

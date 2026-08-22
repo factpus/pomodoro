@@ -73,3 +73,10 @@ test('API rejects invalid room settings', async ({ request }) => {
   });
   expect(response.status()).toBe(400);
 });
+
+test('health endpoint reports the local fallback without caching', async ({ request }) => {
+  const response = await request.get('/api/health');
+  expect(response.status()).toBe(200);
+  expect(await response.json()).toEqual({ status: 'degraded', storage: 'memory' });
+  expect(response.headers()['cache-control']).toBe('no-store');
+});

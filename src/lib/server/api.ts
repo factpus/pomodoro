@@ -11,6 +11,8 @@ import {
   HostTransferUnavailableError,
 } from './room-store';
 import { DiscordWebhookError, IntegrationConfigurationError } from './discord-webhook';
+import { DiscordOAuthConfigurationError, DiscordOAuthError } from './discord-oauth';
+import { logServerEvent } from './observability';
 
 export function apiError(error: unknown): NextResponse {
   if (error instanceof ZodError) {
@@ -46,7 +48,16 @@ export function apiError(error: unknown): NextResponse {
   if (error instanceof IntegrationConfigurationError) {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }
-  console.error(error);
+  if (error instanceof DiscordOAuthConfigurationError) {
+    return NextResponse.json({ error: error.message }, { status: 503 });
+  }
+  if (error instanceof DiscordOAuthError) {
+    return NextResponse.json({ error: error.message }, { status: 401 });
+  }
+  logServerEvent('error', 'api.unhandled_error', {
+    error: error instanceof Error ? error.name : 'unknown',
+    message: error instanceof Error ? error.message.slice(0, 200) : undefined,
+  });
   return NextResponse.json({ error: 'サーバーで問題が発生しました。' }, { status: 500 });
 }
 
