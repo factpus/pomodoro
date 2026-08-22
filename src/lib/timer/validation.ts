@@ -36,6 +36,15 @@ export const discordWebhookSchema = z.object({
   webhookUrl: z.string().trim().url('Webhook URLを確認してください。').max(500),
 });
 
+export const hostTransferRequestSchema = z.object({
+  clientId: z.string().uuid(),
+  targetCandidateId: z.string().regex(/^[a-f0-9]{32}$/, '移譲先を選び直してください。'),
+});
+
+export const hostTransferClientSchema = z.object({
+  clientId: z.string().uuid(),
+});
+
 export function minutesToSettings(input: z.infer<typeof timerSettingsSchema>) {
   return {
     focusSeconds: input.focusMinutes * 60,

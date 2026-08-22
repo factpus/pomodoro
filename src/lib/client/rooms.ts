@@ -66,3 +66,27 @@ export async function disconnectDiscordWebhook(roomId: string, token: string | n
     headers: auth(token),
   }));
 }
+
+export async function requestHostTransfer(roomId: string, clientId: string, targetCandidateId: string, token: string | null) {
+  return parse<RoomSnapshot>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/host-transfer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...auth(token) },
+    body: JSON.stringify({ clientId, targetCandidateId }),
+  }));
+}
+
+export async function cancelHostTransfer(roomId: string, clientId: string, token: string | null) {
+  return parse<RoomSnapshot>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/host-transfer`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...auth(token) },
+    body: JSON.stringify({ clientId }),
+  }));
+}
+
+export async function acceptHostTransfer(roomId: string, clientId: string) {
+  return parse<{ snapshot: RoomSnapshot; hostToken: string }>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/host-transfer/accept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientId }),
+  }));
+}

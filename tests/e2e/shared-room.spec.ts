@@ -39,6 +39,29 @@ test('two clients share state while only the host can control it', async ({ brow
   await expect(guestPage.getByText('同期中', { exact: true })).toBeVisible({ timeout: 8_000 });
   await expect(guestPage.getByRole('button', { name: 'タイマーを開始' })).toBeVisible();
 
+  await hostPage.reload();
+  await expect(hostPage.getByRole('button', { name: 'ホスト' })).toBeVisible();
+  const oldHostToken = await hostPage.evaluate((id) => sessionStorage.getItem(`pomodoro-together-host:${id}`), roomId);
+  expect(oldHostToken).toBeTruthy();
+  await hostPage.getByRole('button', { name: 'ホスト' }).click();
+  await hostPage.getByRole('button', { name: /参加者 [A-F0-9]{4}.*移譲する/ }).click();
+  const spoofedAccept = await hostPage.request.post(`/api/rooms/${roomId}/host-transfer/accept`, {
+    data: { clientId: crypto.randomUUID() },
+  });
+  expect(spoofedAccept.status()).toBe(409);
+  await expect(guestPage.getByText('ホストを引き継ぎますか？')).toBeVisible({ timeout: 12_000 });
+  await guestPage.getByRole('button', { name: '引き継ぐ' }).click();
+  await expect(guestPage.getByRole('button', { name: 'ホスト' })).toBeVisible();
+  const revokedCommand = await hostPage.request.post(`/api/rooms/${roomId}/commands`, {
+    headers: { Authorization: `Bearer ${oldHostToken}` },
+    data: { command: 'start', clientId: crypto.randomUUID() },
+  });
+  expect(revokedCommand.status()).toBe(403);
+  await expect(hostPage.getByText('参加者', { exact: true })).toBeVisible({ timeout: 12_000 });
+  await expect(hostPage.getByRole('button', { name: 'タイマーを開始' })).toBeDisabled();
+  await guestPage.getByRole('button', { name: 'タイマーを開始' }).click();
+  await expect(guestPage.getByRole('button', { name: 'タイマーを一時停止' })).toBeVisible();
+
   await host.close();
   await guest.close();
 });

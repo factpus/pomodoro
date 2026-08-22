@@ -8,6 +8,7 @@ import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand, TimerPhase } from 
 import ShareActions from './ShareActions';
 import DiscordWebhookSettings from './DiscordWebhookSettings';
 import DiscordActivityPanel from './DiscordActivityPanel';
+import { HostTransferBadge, HostTransferOffer } from './HostTransfer';
 import VolumeControl from './VolumeControl';
 
 const phaseLabels: Record<TimerPhase, string> = { focus: '集中', shortBreak: '小休憩', longBreak: '長休憩' };
@@ -20,6 +21,7 @@ export default function Timer({ roomId }: { roomId: string }) {
   const [isMuted, setIsMuted] = useState(true);
   const [volume, setVolume] = useState(0.35);
   const [hostToken, setHostToken] = useState<string | null>(null);
+  const [currentClientId, setCurrentClientId] = useState('');
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
   const tokenRef = useRef<string | null>(null);
   const clientRef = useRef('');
@@ -31,11 +33,20 @@ export default function Timer({ roomId }: { roomId: string }) {
 
   const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot) => {
     const receivedAt = Date.now();
+    if ('role' in next && next.role === 'participant' && tokenRef.current) {
+      sessionStorage.removeItem(hostTokenKey(roomId));
+      tokenRef.current = null;
+      setHostToken(null);
+    }
     serverOffsetRef.current = next.state.serverNow - receivedAt;
-    setSnapshot((current) => ({
-      ...next,
-      role: 'role' in next ? next.role : (current?.role ?? 'participant'),
-    }));
+    setSnapshot((current) => 'role' in next
+      ? next
+      : {
+          ...next,
+          role: current?.role ?? 'participant',
+          participants: current?.participants,
+          hostTransfer: current?.hostTransfer,
+        });
     setRemaining(next.state.remainingSeconds);
     setConnection('connected');
     setError('');
@@ -59,6 +70,7 @@ export default function Timer({ roomId }: { roomId: string }) {
     tokenRef.current = transferredToken ?? sessionStorage.getItem(hostTokenKey(roomId));
     setHostToken(tokenRef.current);
     clientRef.current = clientId();
+    setCurrentClientId(clientRef.current);
     const controller = new AbortController();
     let failures = 0;
 
@@ -119,6 +131,12 @@ export default function Timer({ roomId }: { roomId: string }) {
     if ('Notification' in window) setNotificationPermission(await Notification.requestPermission());
   }
 
+  function receiveHostToken(token: string) {
+    sessionStorage.setItem(hostTokenKey(roomId), token);
+    tokenRef.current = token;
+    setHostToken(token);
+  }
+
   const interact = () => { interactedRef.current = true; focusAudioRef.current?.load(); breakAudioRef.current?.load(); };
   const role = snapshot?.role;
   const running = snapshot?.state.isRunning ?? false;
@@ -132,9 +150,10 @@ export default function Timer({ roomId }: { roomId: string }) {
 
   return (
     <main className={`room-shell phase-${phase}`}>
-      <nav className="room-nav"><Link href="/" className="brand">Pomodoro Together</Link><div className="flex items-center gap-2"><span className={`status ${connection}`}>{connection === 'connected' ? '同期中' : connection === 'connecting' ? '接続中' : '再接続中'}</span><span className="badge">{role === 'host' ? 'ホスト' : '参加者'}</span></div></nav>
+      <nav className="room-nav"><Link href="/" className="brand">Pomodoro Together</Link><div className="flex items-center gap-2"><span className={`status ${connection}`}>{connection === 'connected' ? '同期中' : connection === 'connecting' ? '接続中' : '再接続中'}</span>{snapshot?.role === 'host' && currentClientId ? <HostTransferBadge roomId={roomId} clientId={currentClientId} snapshot={snapshot} token={hostToken} onUpdate={acceptSnapshot} /> : <span className="badge">参加者</span>}</div></nav>
       <section className="timer-card" aria-live="polite">
         <DiscordActivityPanel />
+        {snapshot && currentClientId && <HostTransferOffer roomId={roomId} clientId={currentClientId} snapshot={snapshot} onUpdate={acceptSnapshot} onToken={receiveHostToken} />}
         <div className="timer-head"><div><p className="eyebrow">{phaseLabels[phase]}</p><h1>{roomId}</h1></div><VolumeControl volume={volume} setVolume={setVolume} isMuted={isMuted} setIsMuted={setIsMuted} onInteraction={interact} /></div>
         <div className="time" role="timer" aria-label={`残り${Math.floor(remaining / 60)}分${remaining % 60}秒`}>{minutes}<span>:</span>{seconds}</div>
         <p className="cycle">🍅 {snapshot?.state.completedPomodoros ?? 0} 完了 ・ 次の長休憩まで {snapshot ? snapshot.state.longBreakEvery - snapshot.state.cyclePosition : '–'} セット</p>

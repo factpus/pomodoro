@@ -8,6 +8,7 @@ import {
   RoomForbiddenError,
   RoomNotFoundError,
   StorageUnavailableError,
+  HostTransferUnavailableError,
 } from './room-store';
 import { DiscordWebhookError, IntegrationConfigurationError } from './discord-webhook';
 
@@ -25,6 +26,9 @@ export function apiError(error: unknown): NextResponse {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
   if (error instanceof RoomAlreadyExistsError) {
+    return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+  if (error instanceof HostTransferUnavailableError) {
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
   if (error instanceof RoomForbiddenError) {

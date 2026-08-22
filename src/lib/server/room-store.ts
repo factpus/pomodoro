@@ -10,6 +10,7 @@ import { encryptWebhookUrl, postDiscordWebhook, validateDiscordWebhookUrl } from
 
 const ROOM_TTL_SECONDS = 24 * 60 * 60;
 const PARTICIPANT_TTL_MS = 15_000;
+const HOST_TRANSFER_TTL_MS = 60_000;
 const LOCK_TTL_MS = 3_000;
 
 export class RoomNotFoundError extends Error {}
@@ -17,6 +18,7 @@ export class RoomAlreadyExistsError extends Error {}
 export class RoomForbiddenError extends Error {}
 export class RoomBusyError extends Error {}
 export class StorageUnavailableError extends Error {}
+export class HostTransferUnavailableError extends Error {}
 
 const globalRoomState = globalThis as typeof globalThis & {
   __pomodoroRooms?: Map<string, RoomRecord>;
@@ -38,25 +40,61 @@ function roomKey(roomId: string) {
 
 function pruneParticipants(room: RoomRecord, now: number): RoomRecord {
   const cutoff = now - PARTICIPANT_TTL_MS;
-  return {
+  const next = {
     ...room,
     participants: Object.fromEntries(
       Object.entries(room.participants).filter(([, seenAt]) => seenAt >= cutoff),
     ),
   };
+  if (next.pendingHostTransfer && (
+    next.pendingHostTransfer.expiresAt <= now ||
+    !next.participants[next.pendingHostTransfer.targetClientId]
+  )) {
+    delete next.pendingHostTransfer;
+  }
+  return next;
 }
 
-function snapshot(room: RoomRecord, token: string | null, now: number): RoomSnapshot {
+function participantLabel(clientId: string) {
+  return `参加者 ${clientId.replaceAll('-', '').slice(-4).toUpperCase()}`;
+}
+
+function participantCandidateId(room: RoomRecord, clientId: string) {
+  return hashToken(`${room.hostTokenHash}:${clientId}`).slice(0, 32);
+}
+
+function snapshot(room: RoomRecord, token: string | null, now: number, clientId?: string): RoomSnapshot {
+  const role = tokenMatches(token, room.hostTokenHash) ? 'host' : 'participant';
+  const participants = role === 'host'
+    ? Object.keys(room.participants)
+      .filter((id) => id !== room.hostClientId)
+      .sort()
+      .map((id) => ({ candidateId: participantCandidateId(room, id), label: participantLabel(id) }))
+    : undefined;
+  const transfer = room.pendingHostTransfer;
+  const hostTransfer = transfer
+    ? role === 'host'
+      ? {
+          direction: 'outgoing' as const,
+          targetLabel: participantLabel(transfer.targetClientId),
+          expiresAt: transfer.expiresAt,
+        }
+      : clientId === transfer.targetClientId
+        ? { direction: 'incoming' as const, expiresAt: transfer.expiresAt }
+        : undefined
+    : undefined;
   return {
     roomId: room.roomId,
     state: toPublicTimerState(room.state, now),
     participantCount: Object.keys(room.participants).length,
-    role: tokenMatches(token, room.hostTokenHash) ? 'host' : 'participant',
+    role,
     storage: storageMode(),
     integrations: {
       discordWebhookAvailable: Boolean(process.env.INTEGRATION_ENCRYPTION_KEY),
       discordWebhookConnected: Boolean(room.discordWebhook),
     },
+    participants,
+    hostTransfer,
   };
 }
 
@@ -110,6 +148,7 @@ export async function createRoom(
   const room: RoomRecord = {
     roomId,
     hostTokenHash: hashToken(hostToken),
+    hostClientId: clientId,
     state: createTimerState(settings, now),
     participants: { [clientId]: now },
     createdAt: now,
@@ -123,7 +162,7 @@ export async function createRoom(
     if (memoryRooms.has(roomId)) throw new RoomAlreadyExistsError('そのルーム名は既に使われています。');
     memoryRooms.set(roomId, room);
   }
-  return { snapshot: snapshot(room, hostToken, now), hostToken };
+  return { snapshot: snapshot(room, hostToken, now, clientId), hostToken };
 }
 
 export async function getRoom(
@@ -166,6 +205,7 @@ export async function heartbeat(
   const update = (current: RoomRecord) => {
     const room = pruneParticipants(current, now);
     room.participants[clientId] = now;
+    if (tokenMatches(token, room.hostTokenHash)) room.hostClientId = clientId;
     room.state = advanceTimer(room.state, now);
     room.updatedAt = now;
     return room;
@@ -182,7 +222,7 @@ export async function heartbeat(
     if (result.phaseChanged) {
       await notifyDiscord(result.room, `🍅 **${phaseNames[result.room.state.phase]}を開始しました**\nルーム: ${roomId}`);
     }
-    return snapshot(result.room, token, now);
+    return snapshot(result.room, token, now, clientId);
   }
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
@@ -192,7 +232,7 @@ export async function heartbeat(
   if (previousPhase !== room.state.phase) {
     await notifyDiscord(room, `🍅 **${phaseNames[room.state.phase]}を開始しました**\nルーム: ${roomId}`);
   }
-  return snapshot(room, token, now);
+  return snapshot(room, token, now, clientId);
 }
 
 export async function commandRoom(
@@ -222,14 +262,14 @@ export async function commandRoom(
       return room;
     });
     await notifyCommand(room, command);
-    return snapshot(room, token, now);
+    return snapshot(room, token, now, clientId);
   }
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
   const room = update(current);
   memoryRooms.set(roomId, room);
   await notifyCommand(room, command);
-  return snapshot(room, token, now);
+  return snapshot(room, token, now, clientId);
 }
 
 async function notifyCommand(room: RoomRecord, command: TimerCommand) {
@@ -295,4 +335,124 @@ export async function disconnectDiscordWebhook(roomId: string, token: string | n
   room.updatedAt = now;
   memoryRooms.set(roomId, room);
   return snapshot(room, token, now);
+}
+
+export async function requestHostTransfer(
+  roomId: string,
+  clientId: string,
+  targetCandidateId: string,
+  token: string | null,
+  now = Date.now(),
+) {
+  const update = (current: RoomRecord) => {
+    if (!tokenMatches(token, current.hostTokenHash)) {
+      throw new RoomForbiddenError('ホストを移譲できるのは現在のホストだけです。');
+    }
+    const room = pruneParticipants(current, now);
+    room.participants[clientId] = now;
+    room.hostClientId = clientId;
+    const targetClientId = Object.keys(room.participants).find(
+      (id) => id !== clientId && participantCandidateId(room, id) === targetCandidateId,
+    );
+    if (!targetClientId) {
+      throw new HostTransferUnavailableError('対象の参加者が接続していません。');
+    }
+    room.pendingHostTransfer = {
+      targetClientId,
+      requestedAt: now,
+      expiresAt: now + HOST_TRANSFER_TTL_MS,
+    };
+    room.updatedAt = now;
+    return room;
+  };
+
+  const redis = roomDatabase();
+  if (redis) {
+    const room = await withRedisLock(redis, roomId, async () => {
+      const current = await readRedis(redis, roomId);
+      if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
+      const room = update(current);
+      await writeRedis(redis, room);
+      return room;
+    });
+    return snapshot(room, token, now, clientId);
+  }
+
+  const current = memoryRooms.get(roomId);
+  if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
+  const room = update(current);
+  memoryRooms.set(roomId, room);
+  return snapshot(room, token, now, clientId);
+}
+
+export async function cancelHostTransfer(
+  roomId: string,
+  clientId: string,
+  token: string | null,
+  now = Date.now(),
+) {
+  const update = (current: RoomRecord) => {
+    if (!tokenMatches(token, current.hostTokenHash)) {
+      throw new RoomForbiddenError('移譲を取り消せるのは現在のホストだけです。');
+    }
+    const room = pruneParticipants(current, now);
+    room.participants[clientId] = now;
+    room.hostClientId = clientId;
+    delete room.pendingHostTransfer;
+    room.updatedAt = now;
+    return room;
+  };
+
+  const redis = roomDatabase();
+  if (redis) {
+    const room = await withRedisLock(redis, roomId, async () => {
+      const current = await readRedis(redis, roomId);
+      if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
+      const room = update(current);
+      await writeRedis(redis, room);
+      return room;
+    });
+    return snapshot(room, token, now, clientId);
+  }
+
+  const current = memoryRooms.get(roomId);
+  if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
+  const room = update(current);
+  memoryRooms.set(roomId, room);
+  return snapshot(room, token, now, clientId);
+}
+
+export async function acceptHostTransfer(roomId: string, clientId: string, now = Date.now()) {
+  const update = (current: RoomRecord) => {
+    const room = pruneParticipants(current, now);
+    const transfer = room.pendingHostTransfer;
+    if (!transfer || transfer.targetClientId !== clientId || transfer.expiresAt <= now) {
+      throw new HostTransferUnavailableError('ホスト移譲の依頼が見つからないか、期限切れです。');
+    }
+    const hostToken = createHostToken();
+    room.hostTokenHash = hashToken(hostToken);
+    room.hostClientId = clientId;
+    room.participants[clientId] = now;
+    delete room.pendingHostTransfer;
+    room.updatedAt = now;
+    return { room, hostToken };
+  };
+
+  const redis = roomDatabase();
+  if (redis) {
+    const result = await withRedisLock(redis, roomId, async () => {
+      const current = await readRedis(redis, roomId);
+      if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
+      const result = update(current);
+      await writeRedis(redis, result.room);
+      return result;
+    });
+    return { snapshot: snapshot(result.room, result.hostToken, now, clientId), hostToken: result.hostToken };
+  }
+
+  const current = memoryRooms.get(roomId);
+  if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
+  const result = update(current);
+  memoryRooms.set(roomId, result.room);
+  return { snapshot: snapshot(result.room, result.hostToken, now, clientId), hostToken: result.hostToken };
 }

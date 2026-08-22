@@ -28,8 +28,14 @@ export interface PublicTimerState extends TimerState {
 export interface RoomRecord {
   roomId: string;
   hostTokenHash: string;
+  hostClientId?: string;
   state: TimerState;
   participants: Record<string, number>;
+  pendingHostTransfer?: {
+    targetClientId: string;
+    requestedAt: number;
+    expiresAt: number;
+  };
   discordWebhook?: {
     ciphertext: string;
     iv: string;
@@ -38,6 +44,15 @@ export interface RoomRecord {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface ParticipantSummary {
+  candidateId: string;
+  label: string;
+}
+
+export type HostTransferSnapshot =
+  | { direction: 'outgoing'; targetLabel: string; expiresAt: number }
+  | { direction: 'incoming'; expiresAt: number };
 
 export interface RoomSnapshot {
   roomId: string;
@@ -49,6 +64,8 @@ export interface RoomSnapshot {
     discordWebhookAvailable: boolean;
     discordWebhookConnected: boolean;
   };
+  participants?: ParticipantSummary[];
+  hostTransfer?: HostTransferSnapshot;
 }
 
-export type PublicRoomSnapshot = Omit<RoomSnapshot, 'role'>;
+export type PublicRoomSnapshot = Omit<RoomSnapshot, 'role' | 'participants' | 'hostTransfer'>;
