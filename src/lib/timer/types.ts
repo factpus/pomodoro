@@ -30,6 +30,11 @@ export interface RoomRecord {
   hostTokenHash: string;
   state: TimerState;
   participants: Record<string, number>;
+  discordWebhook?: {
+    ciphertext: string;
+    iv: string;
+    tag: string;
+  };
   createdAt: number;
   updatedAt: number;
 }
@@ -40,5 +45,10 @@ export interface RoomSnapshot {
   participantCount: number;
   role: 'host' | 'participant';
   storage: 'redis' | 'memory';
+  integrations: {
+    discordWebhookAvailable: boolean;
+    discordWebhookConnected: boolean;
+  };
 }
 
+export type PublicRoomSnapshot = Omit<RoomSnapshot, 'role'>;

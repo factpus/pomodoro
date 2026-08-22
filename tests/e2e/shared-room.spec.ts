@@ -20,6 +20,14 @@ test('two clients share state while only the host can control it', async ({ brow
     data: { command: 'start', clientId: crypto.randomUUID() },
   });
   expect(forbidden.status()).toBe(403);
+  const forbiddenIntegration = await guestPage.request.post(`/api/rooms/${roomId}/integrations/discord-webhook`, {
+    data: { webhookUrl: 'https://discord.com/api/webhooks/1/not-a-real-token' },
+  });
+  expect(forbiddenIntegration.status()).toBe(403);
+  const publicSnapshot = await guestPage.request.get(`/api/rooms/${roomId}/public`);
+  expect(publicSnapshot.status()).toBe(200);
+  expect((await publicSnapshot.json()).role).toBeUndefined();
+  expect(publicSnapshot.headers()['cache-control']).toContain('s-maxage=1');
 
   await hostPage.getByRole('button', { name: 'タイマーを開始' }).click();
   await expect(hostPage.getByRole('button', { name: 'タイマーを一時停止' })).toBeVisible();

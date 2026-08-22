@@ -9,6 +9,7 @@ import {
   RoomNotFoundError,
   StorageUnavailableError,
 } from './room-store';
+import { DiscordWebhookError, IntegrationConfigurationError } from './discord-webhook';
 
 export function apiError(error: unknown): NextResponse {
   if (error instanceof ZodError) {
@@ -33,6 +34,12 @@ export function apiError(error: unknown): NextResponse {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }
   if (error instanceof StorageUnavailableError) {
+    return NextResponse.json({ error: error.message }, { status: 503 });
+  }
+  if (error instanceof DiscordWebhookError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof IntegrationConfigurationError) {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }
   console.error(error);

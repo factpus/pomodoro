@@ -3,8 +3,11 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
-import { fetchRoom, sendCommand, sendHeartbeat } from '@/lib/client/rooms';
-import type { RoomSnapshot, TimerCommand, TimerPhase } from '@/lib/timer/types';
+import { fetchPublicRoom, sendCommand, sendHeartbeat } from '@/lib/client/rooms';
+import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand, TimerPhase } from '@/lib/timer/types';
+import ShareActions from './ShareActions';
+import DiscordWebhookSettings from './DiscordWebhookSettings';
+import DiscordActivityPanel from './DiscordActivityPanel';
 import VolumeControl from './VolumeControl';
 
 const phaseLabels: Record<TimerPhase, string> = { focus: '集中', shortBreak: '小休憩', longBreak: '長休憩' };
@@ -14,9 +17,9 @@ export default function Timer({ roomId }: { roomId: string }) {
   const [remaining, setRemaining] = useState(0);
   const [connection, setConnection] = useState<'connecting' | 'connected' | 'reconnecting' | 'missing'>('connecting');
   const [error, setError] = useState('');
-  const [copied, setCopied] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [volume, setVolume] = useState(0.35);
+  const [hostToken, setHostToken] = useState<string | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
   const tokenRef = useRef<string | null>(null);
   const clientRef = useRef('');
@@ -26,10 +29,13 @@ export default function Timer({ roomId }: { roomId: string }) {
   const breakAudioRef = useRef<HTMLAudioElement>(null);
   const interactedRef = useRef(false);
 
-  const acceptSnapshot = useCallback((next: RoomSnapshot) => {
+  const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot) => {
     const receivedAt = Date.now();
     serverOffsetRef.current = next.state.serverNow - receivedAt;
-    setSnapshot(next);
+    setSnapshot((current) => ({
+      ...next,
+      role: 'role' in next ? next.role : (current?.role ?? 'participant'),
+    }));
     setRemaining(next.state.remainingSeconds);
     setConnection('connected');
     setError('');
@@ -44,14 +50,22 @@ export default function Timer({ roomId }: { roomId: string }) {
     const notificationTimer = window.setTimeout(() => {
       setNotificationPermission('Notification' in window ? Notification.permission : 'unsupported');
     }, 0);
-    tokenRef.current = sessionStorage.getItem(hostTokenKey(roomId));
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const transferredToken = fragment.get('hostToken');
+    if (transferredToken) {
+      sessionStorage.setItem(hostTokenKey(roomId), transferredToken);
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    tokenRef.current = transferredToken ?? sessionStorage.getItem(hostTokenKey(roomId));
+    setHostToken(tokenRef.current);
     clientRef.current = clientId();
     const controller = new AbortController();
     let failures = 0;
 
     const sync = async () => {
+      if (document.hidden) return;
       try {
-        acceptSnapshot(await fetchRoom(roomId, tokenRef.current, controller.signal)); failures = 0;
+        acceptSnapshot(await fetchPublicRoom(roomId, controller.signal)); failures = 0;
       } catch (caught) {
         if (controller.signal.aborted) return;
         failures += 1;
@@ -64,12 +78,14 @@ export default function Timer({ roomId }: { roomId: string }) {
       try { acceptSnapshot(await sendHeartbeat(roomId, clientRef.current, tokenRef.current)); failures = 0; }
       catch { failures += 1; if (failures > 1) setConnection('reconnecting'); }
     };
-    void sync(); void beat();
-    const syncTimer = window.setInterval(sync, 1_000);
-    const beatTimer = window.setInterval(beat, 5_000);
-    const onOnline = () => { setConnection('connecting'); void sync(); void beat(); };
-    window.addEventListener('online', onOnline);
-    return () => { controller.abort(); window.clearTimeout(notificationTimer); window.clearInterval(syncTimer); window.clearInterval(beatTimer); window.removeEventListener('online', onOnline); };
+    void beat();
+    const syncTimer = window.setInterval(sync, 2_000);
+    const beatTimer = window.setInterval(beat, 10_000);
+    const refresh = () => { setConnection('connecting'); void sync(); void beat(); };
+    const onVisibilityChange = () => { if (!document.hidden) refresh(); };
+    window.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('online', refresh);
+    return () => { controller.abort(); window.clearTimeout(notificationTimer); window.clearInterval(syncTimer); window.clearInterval(beatTimer); window.removeEventListener('visibilitychange', onVisibilityChange); window.removeEventListener('online', refresh); };
   }, [acceptSnapshot, roomId]);
 
   useEffect(() => {
@@ -99,11 +115,6 @@ export default function Timer({ roomId }: { roomId: string }) {
     catch (caught) { setError(caught instanceof Error ? caught.message : '操作に失敗しました。'); }
   }
 
-  async function copyInvite() {
-    await navigator.clipboard.writeText(`${window.location.origin}/room/${roomId}`);
-    setCopied(true); window.setTimeout(() => setCopied(false), 2_000);
-  }
-
   async function enableNotifications() {
     if ('Notification' in window) setNotificationPermission(await Notification.requestPermission());
   }
@@ -123,6 +134,7 @@ export default function Timer({ roomId }: { roomId: string }) {
     <main className={`room-shell phase-${phase}`}>
       <nav className="room-nav"><Link href="/" className="brand">Pomodoro Together</Link><div className="flex items-center gap-2"><span className={`status ${connection}`}>{connection === 'connected' ? '同期中' : connection === 'connecting' ? '接続中' : '再接続中'}</span><span className="badge">{role === 'host' ? 'ホスト' : '参加者'}</span></div></nav>
       <section className="timer-card" aria-live="polite">
+        <DiscordActivityPanel />
         <div className="timer-head"><div><p className="eyebrow">{phaseLabels[phase]}</p><h1>{roomId}</h1></div><VolumeControl volume={volume} setVolume={setVolume} isMuted={isMuted} setIsMuted={setIsMuted} onInteraction={interact} /></div>
         <div className="time" role="timer" aria-label={`残り${Math.floor(remaining / 60)}分${remaining % 60}秒`}>{minutes}<span>:</span>{seconds}</div>
         <p className="cycle">🍅 {snapshot?.state.completedPomodoros ?? 0} 完了 ・ 次の長休憩まで {snapshot ? snapshot.state.longBreakEvery - snapshot.state.cyclePosition : '–'} セット</p>
@@ -133,9 +145,10 @@ export default function Timer({ roomId }: { roomId: string }) {
         </div>
         {role === 'participant' && <p className="hint">タイマー操作はホストだけが行えます。</p>}
         {error && <p className="error" role="alert">{error}</p>}
+        {snapshot && <ShareActions roomId={roomId} state={snapshot.state} />}
+        {snapshot?.role === 'host' && snapshot.integrations.discordWebhookAvailable && <DiscordWebhookSettings roomId={roomId} token={hostToken} connected={snapshot.integrations.discordWebhookConnected} onUpdate={acceptSnapshot} />}
         <div className="room-actions">
           <span>👥 {snapshot?.participantCount ?? 0}人</span>
-          <button type="button" onClick={() => void copyInvite()}>{copied ? 'コピーしました' : '招待リンクをコピー'}</button>
           {notificationPermission === 'default' && <button type="button" onClick={() => void enableNotifications()}>通知を有効化</button>}
         </div>
       </section>

@@ -6,11 +6,12 @@
 
 ## 主な機能
 
-- ルームURLによる複数人同期（1秒以内）
+- CDNキャッシュを利用したルームURLによる複数人同期（通常2秒以内）
 - ホスト・参加者の権限分離
 - 終了時刻を基準にした、タブ休止に強いタイマー
 - 切断後の自動再接続と状態復元
-- 参加人数、招待リンク、プリセット、長休憩、ブラウザ通知
+- 参加人数、Discord・LINE共有、ルーム別OGP、プリセット、長休憩、ブラウザ通知
+- 任意のDiscord Webhook通知、`/pomodoro`コマンド、Discord Activity
 - レスポンシブUI、キーボード操作、PWA、OG画像
 
 ## 技術構成
@@ -43,6 +44,8 @@ UPSTASH_REDIS_REST_TOKEN
 ```
 
 `KV_REST_API_URL` / `KV_REST_API_TOKEN` も後方互換として利用できます。
+
+Discord連携は任意です。暗号鍵、Interaction、Activityの設定は [Discord連携セットアップ](docs/DISCORD_SETUP.md) を参照してください。
 
 ## 検証
 

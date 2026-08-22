@@ -1,6 +1,6 @@
 'use client';
 
-import type { RoomSnapshot, TimerCommand } from '@/lib/timer/types';
+import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand } from '@/lib/timer/types';
 
 export interface CreateRoomInput {
   roomId?: string;
@@ -36,6 +36,10 @@ export async function fetchRoom(roomId: string, token: string | null, signal?: A
   return parse<RoomSnapshot>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}`, { headers: auth(token), cache: 'no-store', signal }));
 }
 
+export async function fetchPublicRoom(roomId: string, signal?: AbortSignal) {
+  return parse<PublicRoomSnapshot>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/public`, { signal }));
+}
+
 export async function sendHeartbeat(roomId: string, id: string, token: string | null) {
   return parse<RoomSnapshot>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/heartbeat`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...auth(token) }, body: JSON.stringify({ clientId: id }),
@@ -45,5 +49,20 @@ export async function sendHeartbeat(roomId: string, id: string, token: string | 
 export async function sendCommand(roomId: string, command: TimerCommand, id: string, token: string | null) {
   return parse<RoomSnapshot>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/commands`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...auth(token) }, body: JSON.stringify({ command, clientId: id }),
+  }));
+}
+
+export async function connectDiscordWebhook(roomId: string, webhookUrl: string, token: string | null) {
+  return parse<RoomSnapshot>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/integrations/discord-webhook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...auth(token) },
+    body: JSON.stringify({ webhookUrl }),
+  }));
+}
+
+export async function disconnectDiscordWebhook(roomId: string, token: string | null) {
+  return parse<RoomSnapshot>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/integrations/discord-webhook`, {
+    method: 'DELETE',
+    headers: auth(token),
   }));
 }

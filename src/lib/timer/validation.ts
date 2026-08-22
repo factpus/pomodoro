@@ -32,6 +32,10 @@ export const timerCommandSchema = z.object({
   clientId: z.string().uuid(),
 });
 
+export const discordWebhookSchema = z.object({
+  webhookUrl: z.string().trim().url('Webhook URLを確認してください。').max(500),
+});
+
 export function minutesToSettings(input: z.infer<typeof timerSettingsSchema>) {
   return {
     focusSeconds: input.focusMinutes * 60,
@@ -40,4 +44,3 @@ export function minutesToSettings(input: z.infer<typeof timerSettingsSchema>) {
     longBreakEvery: input.longBreakEvery,
   };
 }
-

@@ -16,13 +16,14 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const normalizedRoomId = roomId.trim().toLowerCase();
+  const roomPath = (id: string) => `/room/${id}${window.location.search}`;
 
   async function createRoom(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
     try {
       const result = await createSharedRoom({ roomId: normalizedRoomId || undefined, settings }, clientId());
       sessionStorage.setItem(hostTokenKey(result.snapshot.roomId), result.hostToken);
-      router.push(`/room/${result.snapshot.roomId}`);
+      router.push(roomPath(result.snapshot.roomId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'ルームを作成できませんでした。'); setBusy(false);
     }
@@ -30,7 +31,7 @@ export default function Home() {
 
   function joinRoom() {
     if (!normalizedRoomId) { setError('参加するルーム名を入力してください。'); return; }
-    router.push(`/room/${normalizedRoomId}`);
+    router.push(roomPath(normalizedRoomId));
   }
 
   return (
@@ -58,7 +59,12 @@ export default function Home() {
           <p className="hint">設定はルーム作成者が決めます。参加時には既存ルームの設定が使われます。</p>
         </form>
       </section>
-      <footer><Link href="/about">このアプリについて</Link><span>Made by factpus</span></footer>
+      <section className="home-features" aria-label="特徴">
+        <article><span>01</span><h2>登録なしで共有</h2><p>ルームを作り、DiscordやLINEへURLを送るだけ。</p></article>
+        <article><span>02</span><h2>通話はいつもの場所で</h2><p>音声機能を増やさず、集中と休憩だけを揃えます。</p></article>
+        <article><span>03</span><h2>切断しても復元</h2><p>サーバー時刻を基準に、正しい残り時間へ戻ります。</p></article>
+      </section>
+      <footer><nav><Link href="/guide">使い方</Link><Link href="/faq">FAQ</Link><Link href="/about">About</Link><Link href="/privacy">プライバシー</Link><Link href="/terms">利用規約</Link><Link href="/contact">問い合わせ</Link></nav><span>Made by factpus</span></footer>
     </main>
   );
 }

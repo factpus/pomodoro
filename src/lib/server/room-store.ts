@@ -3,9 +3,10 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { Redis } from '@upstash/redis';
 import { advanceTimer, applyTimerCommand, createTimerState, toPublicTimerState } from '@/lib/timer/model';
-import type { RoomRecord, RoomSnapshot, TimerCommand, TimerSettings } from '@/lib/timer/types';
+import type { PublicRoomSnapshot, RoomRecord, RoomSnapshot, TimerCommand, TimerSettings } from '@/lib/timer/types';
 import { redisClient, storageMode } from './redis';
 import { createHostToken, hashToken, tokenMatches } from './security';
+import { encryptWebhookUrl, postDiscordWebhook, validateDiscordWebhookUrl } from './discord-webhook';
 
 const ROOM_TTL_SECONDS = 24 * 60 * 60;
 const PARTICIPANT_TTL_MS = 15_000;
@@ -52,7 +53,22 @@ function snapshot(room: RoomRecord, token: string | null, now: number): RoomSnap
     participantCount: Object.keys(room.participants).length,
     role: tokenMatches(token, room.hostTokenHash) ? 'host' : 'participant',
     storage: storageMode(),
+    integrations: {
+      discordWebhookAvailable: Boolean(process.env.INTEGRATION_ENCRYPTION_KEY),
+      discordWebhookConnected: Boolean(room.discordWebhook),
+    },
   };
+}
+
+const phaseNames = { focus: '集中', shortBreak: '小休憩', longBreak: '長休憩' } as const;
+
+async function notifyDiscord(room: RoomRecord, content: string) {
+  if (!room.discordWebhook) return;
+  try {
+    await postDiscordWebhook(room.discordWebhook, content);
+  } catch (error) {
+    console.warn('Discord Webhook notification failed:', error instanceof Error ? error.message : 'unknown error');
+  }
 }
 
 async function readRedis(redis: Redis, roomId: string): Promise<RoomRecord | null> {
@@ -129,6 +145,17 @@ export async function getRoom(
   return snapshot(room, token, now);
 }
 
+export async function getPublicRoom(roomId: string, now = Date.now()): Promise<PublicRoomSnapshot> {
+  const room = await getRoom(roomId, null, now);
+  return {
+    roomId: room.roomId,
+    state: room.state,
+    participantCount: room.participantCount,
+    storage: room.storage,
+    integrations: room.integrations,
+  };
+}
+
 export async function heartbeat(
   roomId: string,
   clientId: string,
@@ -144,18 +171,27 @@ export async function heartbeat(
     return room;
   };
   if (redis) {
-    return withRedisLock(redis, roomId, async () => {
+    const result = await withRedisLock(redis, roomId, async () => {
       const current = await readRedis(redis, roomId);
       if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
+      const previousPhase = current.state.phase;
       const room = update(current);
       await writeRedis(redis, room);
-      return snapshot(room, token, now);
+      return { room, phaseChanged: previousPhase !== room.state.phase };
     });
+    if (result.phaseChanged) {
+      await notifyDiscord(result.room, `🍅 **${phaseNames[result.room.state.phase]}を開始しました**\nルーム: ${roomId}`);
+    }
+    return snapshot(result.room, token, now);
   }
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
+  const previousPhase = current.state.phase;
   const room = update(current);
   memoryRooms.set(roomId, room);
+  if (previousPhase !== room.state.phase) {
+    await notifyDiscord(room, `🍅 **${phaseNames[room.state.phase]}を開始しました**\nルーム: ${roomId}`);
+  }
   return snapshot(room, token, now);
 }
 
@@ -178,17 +214,85 @@ export async function commandRoom(
   };
   const redis = roomDatabase();
   if (redis) {
-    return withRedisLock(redis, roomId, async () => {
+    const room = await withRedisLock(redis, roomId, async () => {
       const current = await readRedis(redis, roomId);
       if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
       const room = update(current);
       await writeRedis(redis, room);
-      return snapshot(room, token, now);
+      return room;
     });
+    await notifyCommand(room, command);
+    return snapshot(room, token, now);
   }
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
   const room = update(current);
+  memoryRooms.set(roomId, room);
+  await notifyCommand(room, command);
+  return snapshot(room, token, now);
+}
+
+async function notifyCommand(room: RoomRecord, command: TimerCommand) {
+  const content = command === 'start'
+    ? `▶️ **${phaseNames[room.state.phase]}を開始しました**\nルーム: ${room.roomId}`
+    : command === 'skip'
+      ? `⏭️ **${phaseNames[room.state.phase]}へ進みました**\nルーム: ${room.roomId}`
+      : command === 'reset'
+        ? `↺ **タイマーをリセットしました**\nルーム: ${room.roomId}`
+        : null;
+  if (content) await notifyDiscord(room, content);
+}
+
+export async function connectDiscordWebhook(roomId: string, token: string | null, webhookUrl: string, now = Date.now()) {
+  const currentSnapshot = await getRoom(roomId, token, now);
+  if (currentSnapshot.role !== 'host') throw new RoomForbiddenError('Discord通知を設定できるのはホストだけです。');
+
+  const secret = encryptWebhookUrl(validateDiscordWebhookUrl(webhookUrl));
+  await postDiscordWebhook(secret, `✅ **Discord通知を接続しました**\nルーム: ${roomId}`);
+
+  const redis = roomDatabase();
+  if (redis) {
+    const room = await withRedisLock(redis, roomId, async () => {
+      const current = await readRedis(redis, roomId);
+      if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
+      if (!tokenMatches(token, current.hostTokenHash)) throw new RoomForbiddenError('Discord通知を設定できるのはホストだけです。');
+      current.discordWebhook = secret;
+      current.updatedAt = now;
+      await writeRedis(redis, current);
+      return current;
+    });
+    return snapshot(room, token, now);
+  }
+
+  const room = memoryRooms.get(roomId);
+  if (!room) throw new RoomNotFoundError('ルームが見つかりません。');
+  if (!tokenMatches(token, room.hostTokenHash)) throw new RoomForbiddenError('Discord通知を設定できるのはホストだけです。');
+  room.discordWebhook = secret;
+  room.updatedAt = now;
+  memoryRooms.set(roomId, room);
+  return snapshot(room, token, now);
+}
+
+export async function disconnectDiscordWebhook(roomId: string, token: string | null, now = Date.now()) {
+  const redis = roomDatabase();
+  if (redis) {
+    const room = await withRedisLock(redis, roomId, async () => {
+      const current = await readRedis(redis, roomId);
+      if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
+      if (!tokenMatches(token, current.hostTokenHash)) throw new RoomForbiddenError('Discord通知を解除できるのはホストだけです。');
+      delete current.discordWebhook;
+      current.updatedAt = now;
+      await writeRedis(redis, current);
+      return current;
+    });
+    return snapshot(room, token, now);
+  }
+
+  const room = memoryRooms.get(roomId);
+  if (!room) throw new RoomNotFoundError('ルームが見つかりません。');
+  if (!tokenMatches(token, room.hostTokenHash)) throw new RoomForbiddenError('Discord通知を解除できるのはホストだけです。');
+  delete room.discordWebhook;
+  room.updatedAt = now;
   memoryRooms.set(roomId, room);
   return snapshot(room, token, now);
 }

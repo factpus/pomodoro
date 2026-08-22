@@ -1,10 +1,14 @@
 # Pomodoro Together 改善記録
 
-最終更新: 2026-08-20
+最終更新: 2026-08-22
 
 ## 目的
 
 単独利用しかできなかったタイマーを、複数人が同じルームで正確かつ安全に利用できるポートフォリオ品質のWebアプリへ改善する。
+
+プロダクトの中心価値は、独自の音声通話やチャットを持つことではなく、DiscordやLINEなど既存の音声チャットを利用する人たちの集中・休憩時間だけを同期することとする。
+
+> 通話はDiscord・LINE。時間管理はPomodoro Together。
 
 ## 原因と判断
 
@@ -27,14 +31,97 @@ Vercelの500エラー自体はFramework Presetが `Other` だったことが直�
 - About、OG画像、PWA manifest/service workerを追加
 - Vitest単体テスト、Playwright 2クライアントE2E、GitHub Actionsを追加
 - READMEとアーキテクチャ文書を更新
+- 公開スナップショットをCDNキャッシュし、表示同期を2秒、heartbeatを10秒へ最適化
+- Discord・LINE共有、Web Share API、ルーム別OGPを追加
+- Discord Webhookの暗号化保存、疎通確認、切断、重要イベント通知を追加
+- 署名検証付きDiscord Interactionと `/pomodoro` ルーム作成を追加
+- Discord Activity SDK、参加人数、招待ダイアログ、Webフォールバックを追加
+- 使い方、FAQ、Privacy、Terms、Contact、sitemap、robotsを追加
+- CSP、Referrer Policy、Permissions Policyなどのセキュリティヘッダーを追加
 
 ## 本番リリースの最終条件
 
 - Vercel MarketplaceでUpstash Redisを作成し、`pomodoro-app` に接続する
 - mainへpushして本番デプロイを実行する
 - 異なる2ブラウザで、作成・参加・開始・停止・再接続を確認する
+- Discord連携を公開する場合は環境変数とDeveloper Portalを `DISCORD_SETUP.md` に従って設定する
 
 Redis未接続の本番では、誤って不完全な共有モードを提供しないようAPIが503を返します。
+
+## 実装状況
+
+### Phase 1: 共有導線（実装済み）
+
+- ルーム画面へ「Discordへ共有」「LINEへ共有」「リンクをコピー」を追加
+- 部屋名、集中時間、休憩時間、参加URLを含む共有文を生成
+- ルームごとの動的OGPを実装し、Discord・LINE上のリンクプレビューを改善
+- Web Share API対応端末ではOS標準の共有画面を利用
+- 共有成功、キャンセル、未対応ブラウザのフォールバックをテスト
+
+### Phase 2: Discord Webhook / Bot（アプリ側実装済み）
+
+- 任意設定としてDiscord Webhookをルームへ接続
+- ルーム作成、集中開始、休憩開始、セッション終了のみを通知
+- Webhook URLをクライアントやログへ露出させず、サーバー側で暗号化して保存
+- Webhookの疎通確認、切断、失効、再設定を実装
+- Discord Botのスラッシュコマンドからルームを作成し、参加ボタン付きメッセージを投稿
+- Botを利用しないWeb版の動作を維持
+
+### Phase 3: Discord Activity（アプリ側実装済み）
+
+- Discord Developer AppとActivity URL Mappingを設定
+- Embedded App SDKを導入し、Discord内iframeから既存Webアプリを起動
+- Discord参加者情報と既存ルーム参加者モデルを接続
+- Discord内からActivityへの招待を実装
+- 既存のNext.js API・Redis状態モデルを共通コアとして再利用
+- 通常ブラウザ、Discordデスクトップ、Discord Web、iOS、Androidで動作確認
+- CSP、OAuth、権限、プライバシーポリシー、利用規約、配布・審査要件を整備
+
+Developer PortalのApplication作成、URL Mapping、環境変数の投入と実機審査は外部設定のため未実施。手順は `DISCORD_SETUP.md` に固定した。
+
+### Phase 4: LINE Bot（需要確認後・意図的に保留）
+
+- LINE共有ボタンの利用状況を計測して需要を確認
+- Messaging API Botからルーム作成・参加URL投稿を可能にする
+- 集中開始、休憩開始、終了の通知を任意で有効化
+- Official Account、Webhook署名検証、トークン保管、グループ制約へ対応
+
+## 実装しない範囲
+
+- 独自チャット、音声通話、ビデオ通話
+- 高機能なタスク・プロジェクト管理
+- 公開ルーム検索、SNS、ランキング
+- 連携先へ毎秒の残り時間を投稿する高頻度通知
+
+これらはDiscordやLINEの機能と重複し、共同タイマーとしての単純さを損なうため対象外とする。
+
+## 事業方針
+
+当面は広告や課金を導入せず、一つの公式Webサービスへ利用者、改善、ブランドを集中させる。第一目的は、実際に継続利用できるサービス品質と、設計・実装・運用判断を説明できるポートフォリオ価値を高めることとする。
+
+サービス自体の譲渡・ライセンスは将来の選択肢として残す。ただし、複製サービスの乱立や作者表示の喪失を前提とせず、商標・著作者表示、公式版との関係、保守範囲、再販売制限を契約で定義できる場合だけ検討する。
+
+### 広告（調査記録として保留）
+
+- Google AdSenseを最初の広告配信候補とする
+- 利用規模が小さい段階では、Cookieを使わない固定スポンサー枠も比較する
+- 集中中の画面を広告で覆わない
+- トップ、独自の解説記事、手動で開く結果画面を主な広告面とする
+- ルーム画面へ表示する場合も操作領域から離れた1枠に限定し、自動更新しない
+- Discord Activity内では当面AdSenseを表示しない
+- 広告導入前後のルーム作成率、完了率、離脱率を比較する
+
+広告を再検討する場合の条件
+
+- 独自ドメインを取得
+- 1秒ポーリングとheartbeatを適応同期へ再設計し、インフラ費を削減
+- トップ、使い方、ポモドーロ入門、共同作業ガイド、FAQ、Aboutを拡充
+- プライバシーポリシー、外部送信、利用規約、問い合わせを追加
+- 広告機能フラグ、手動広告コンポーネント、広告除外ページ、CMP、`ads.txt`を実装
+- API・Redis使用量、ページビュー、共有、再訪を匿名・集計中心で計測
+- AdSenseポリシー、誤クリック、無効トラフィック、モバイル表示を確認
+
+広告の詳細は[広告収益化調査](AD_MONETIZATION_RESEARCH.md)、譲渡・ライセンスの検討内容は[セルフホスト販売ガイド](SELF_HOSTED_SALES_GUIDE.md)へ保存する。いずれも現行実装の要件ではない。
 
 ## 自動検証の対象
 
