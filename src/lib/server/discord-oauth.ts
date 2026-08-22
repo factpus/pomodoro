@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { createHmac } from 'node:crypto';
+
 export class DiscordOAuthConfigurationError extends Error {}
 export class DiscordOAuthError extends Error {}
 
@@ -34,6 +36,18 @@ export async function exchangeDiscordCode(code: string) {
   const result = await response.json().catch(() => null) as { access_token?: string; expires_in?: number } | null;
   if (!response.ok || !result?.access_token) throw new DiscordOAuthError('Discordの認証コードを確認できませんでした。');
   return { accessToken: result.access_token, expiresIn: result.expires_in ?? 0 };
+}
+
+export function deriveDiscordActivityHostToken(instanceId: string, discordUserId: string) {
+  const { clientId, clientSecret } = credentials();
+  return createHmac('sha256', clientSecret)
+    .update('pomodoro-together:discord-activity-host\0')
+    .update(clientId)
+    .update('\0')
+    .update(instanceId)
+    .update('\0')
+    .update(discordUserId)
+    .digest('base64url');
 }
 
 export async function verifyDiscordAccessToken(accessToken: string) {

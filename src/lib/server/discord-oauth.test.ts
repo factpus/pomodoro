@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { exchangeDiscordCode, verifyDiscordAccessToken } from './discord-oauth';
+import { deriveDiscordActivityHostToken, exchangeDiscordCode, verifyDiscordAccessToken } from './discord-oauth';
 
 beforeEach(() => {
   process.env.DISCORD_APPLICATION_ID = 'app-id';
@@ -20,6 +20,13 @@ describe('Discord OAuth', () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.headers).toEqual({ 'Content-Type': 'application/x-www-form-urlencoded' });
     expect(String(init.body)).toContain('client_secret=client-secret');
+  });
+
+  it('derives a stable host recovery token scoped to the Activity and Discord user', () => {
+    const token = deriveDiscordActivityHostToken('instance-a', 'user-a');
+    expect(deriveDiscordActivityHostToken('instance-a', 'user-a')).toBe(token);
+    expect(deriveDiscordActivityHostToken('instance-a', 'user-b')).not.toBe(token);
+    expect(deriveDiscordActivityHostToken('instance-b', 'user-a')).not.toBe(token);
   });
 
   it('verifies the Discord user for an Activity room', async () => {

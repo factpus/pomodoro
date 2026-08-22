@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { apiError, rateLimited } from '@/lib/server/api';
-import { verifyDiscordAccessToken } from '@/lib/server/discord-oauth';
+import { deriveDiscordActivityHostToken, verifyDiscordAccessToken } from '@/lib/server/discord-oauth';
 import { checkRateLimit } from '@/lib/server/rate-limit';
 import { joinDiscordActivityRoom } from '@/lib/server/room-store';
 import { bearerToken, requestIp } from '@/lib/server/security';
@@ -12,9 +12,10 @@ export async function POST(request: Request) {
     if (!rate.allowed) return rateLimited(rate.retryAfter);
     const accessToken = bearerToken(request);
     if (!accessToken) return NextResponse.json({ error: 'Discord認証が必要です。' }, { status: 401 });
-    await verifyDiscordAccessToken(accessToken);
     const input = discordActivityRoomSchema.parse(await request.json());
-    return NextResponse.json(await joinDiscordActivityRoom(input.instanceId, input.clientId), { headers: { 'Cache-Control': 'no-store' } });
+    const discordUser = await verifyDiscordAccessToken(accessToken);
+    const recoveryToken = deriveDiscordActivityHostToken(input.instanceId, discordUser.id);
+    return NextResponse.json(await joinDiscordActivityRoom(input.instanceId, input.clientId, recoveryToken), { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return apiError(error);
   }

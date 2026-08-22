@@ -198,7 +198,7 @@ export async function createRoom(
   return { snapshot: snapshot(room, hostToken, now, clientId), hostToken };
 }
 
-export async function joinDiscordActivityRoom(instanceId: string, clientId: string, now = Date.now()) {
+export async function joinDiscordActivityRoom(instanceId: string, clientId: string, recoveryToken: string, now = Date.now()) {
   const roomId = `activity-${hashToken(instanceId).slice(0, 24)}`;
   const redis = roomDatabase();
 
@@ -208,9 +208,11 @@ export async function joinDiscordActivityRoom(instanceId: string, clientId: stri
       room.participants[clientId] = now;
       room.state = advanceTimer(room.state, now);
       room.updatedAt = now;
-      return { room, hostToken: null as string | null };
+      const hostToken = tokenMatches(recoveryToken, room.hostTokenHash) ? recoveryToken : null;
+      if (hostToken) room.hostClientId = clientId;
+      return { room, hostToken };
     }
-    const hostToken = createHostToken();
+    const hostToken = recoveryToken;
     const room: RoomRecord = {
       roomId,
       hostTokenHash: hashToken(hostToken),
