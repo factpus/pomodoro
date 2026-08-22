@@ -12,14 +12,16 @@ afterEach(() => {
 });
 
 describe('Discord Webhook delivery', () => {
-  it('retries one rate-limited request', async () => {
+  it('waits for Discord\'s full retry interval before retrying', async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response('', { status: 429, headers: { 'retry-after': '0' } }))
+      .mockResolvedValueOnce(new Response('', { status: 429, headers: { 'retry-after': '3' } }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
     const delivery = postDiscordWebhook(encryptWebhookUrl('https://discord.com/api/webhooks/1/token'), 'start');
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
     await delivery;
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
@@ -28,5 +30,13 @@ describe('Discord Webhook delivery', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })));
     const delivery = postDiscordWebhook(encryptWebhookUrl('https://discord.com/api/webhooks/1/token'), 'start');
     await expect(delivery).rejects.toMatchObject({ status: 404, permanent: true });
+  });
+
+  it('does not retry before a rate limit that exceeds the operation deadline', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 429, headers: { 'retry-after': '30' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const delivery = postDiscordWebhook(encryptWebhookUrl('https://discord.com/api/webhooks/1/token'), 'start');
+    await expect(delivery).rejects.toMatchObject({ status: 429, permanent: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

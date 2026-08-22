@@ -28,9 +28,9 @@ Discordコマンドから作成する場合は、実行者だけに見える応�
 
 ## 連携境界
 
-Discord Webhookの送信失敗はタイマー操作から分離し、共有状態を停止させません。429だけを1回再試行し、401/404で失効を確認した接続は自動解除します。Discord InteractionはEd25519署名を検証します。
+Discord Webhookの送信失敗はタイマー操作から分離し、共有状態を停止させません。429だけを1回、処理期限内でDiscord指定の待機時間を短縮せずに再試行し、401/404で失効を確認した接続は自動解除します。Discord InteractionはEd25519署名を検証します。
 
-Embedded App SDKはDiscord iframe内かつ設定済みの場合だけ初期化し、通常ブラウザでは読み込みません。ActivityではDiscord OAuthをサーバー側で交換・検証し、`instance_id` のハッシュから同一インスタンス用ルームを決定します。最初の参加者だけへホストトークンを返し、以後の参加者は同じルームへ読み取り専用で参加します。アクセストークンやDiscordユーザー名は永続化しません。Rich Presenceにはフェーズ、実行状態、終了時刻だけを送信します。CSPはDiscordからの埋め込みを許可しながら、その他のframe ancestorと不要な端末権限を制限します。
+Embedded App SDKはDiscord iframe内かつ設定済みの場合だけ初期化し、通常ブラウザでは読み込みません。ActivityではDiscord OAuthをサーバー側で交換し、認可情報のApplication ID、`identify`・`rpc.activities.write` scope、ユーザーIDを検証してから、`instance_id` のハッシュで同一インスタンス用ルームを決定します。最初の参加者だけへホストトークンを返し、以後の参加者は同じルームへ読み取り専用で参加します。アクセストークンやDiscordユーザー名は永続化しません。Rich Presenceにはフェーズ、実行状態、終了時刻だけを送信します。CSPはDiscordからの埋め込みを許可しながら、その他のframe ancestorと不要な端末権限を制限します。
 
 `/api/health` はRedis接続の可否を返します。運用ログはイベント名を持つJSONへ統一し、トークン、Webhook URL、Discordアクセストークン、ルーム名を記録しません。
 

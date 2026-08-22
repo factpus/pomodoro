@@ -4,6 +4,7 @@ import { postDiscordRoomInvite, verifyDiscordRequest } from './discord-interacti
 
 afterEach(() => {
   delete process.env.DISCORD_PUBLIC_KEY;
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -27,5 +28,19 @@ describe('Discord interactions', () => {
     const body = JSON.parse(String(init.body));
     expect(body.allowed_mentions).toEqual({ parse: [] });
     expect(body.components[0].components[0].url).toBe('https://example.com/room/room-a');
+  });
+
+  it('waits for Discord\'s full retry interval before posting the room button again', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ retry_after: 3 }), { status: 429 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const delivery = postDiscordRoomInvite('app', 'token', 'room-a', 'https://example.com/room/room-a');
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await delivery;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

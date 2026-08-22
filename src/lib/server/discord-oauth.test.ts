@@ -23,7 +23,29 @@ describe('Discord OAuth', () => {
   });
 
   it('verifies the Discord user for an Activity room', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: '42', username: 'focus-user' }), { status: 200 })));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      application: { id: 'app-id' },
+      scopes: ['identify', 'rpc.activities.write'],
+      user: { id: '42' },
+    }), { status: 200 })));
     await expect(verifyDiscordAccessToken('access')).resolves.toEqual({ id: '42' });
+  });
+
+  it('rejects a token issued to another Discord application', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      application: { id: 'other-app' },
+      scopes: ['identify', 'rpc.activities.write'],
+      user: { id: '42' },
+    }), { status: 200 })));
+    await expect(verifyDiscordAccessToken('access')).rejects.toThrow('Discordの認証が無効です。');
+  });
+
+  it('rejects a token without the Activity presence scope', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      application: { id: 'app-id' },
+      scopes: ['identify'],
+      user: { id: '42' },
+    }), { status: 200 })));
+    await expect(verifyDiscordAccessToken('access')).rejects.toThrow('Discordの認証が無効です。');
   });
 });

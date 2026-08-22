@@ -4,12 +4,18 @@ export class DiscordOAuthConfigurationError extends Error {}
 export class DiscordOAuthError extends Error {}
 
 function credentials() {
-  const clientId = process.env.DISCORD_APPLICATION_ID ?? process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
+  const clientId = configuredClientId();
   const clientSecret = process.env.DISCORD_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
+  if (!clientSecret) {
     throw new DiscordOAuthConfigurationError('Discord ActivityのOAuth設定が完了していません。');
   }
   return { clientId, clientSecret };
+}
+
+function configuredClientId() {
+  const clientId = process.env.DISCORD_APPLICATION_ID ?? process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
+  if (!clientId) throw new DiscordOAuthConfigurationError('Discord ActivityのOAuth設定が完了していません。');
+  return clientId;
 }
 
 export async function exchangeDiscordCode(code: string) {
@@ -31,16 +37,30 @@ export async function exchangeDiscordCode(code: string) {
 }
 
 export async function verifyDiscordAccessToken(accessToken: string) {
+  const clientId = configuredClientId();
   let response: Response;
   try {
-    response = await fetch('https://discord.com/api/v10/users/@me', {
+    response = await fetch('https://discord.com/api/v10/oauth2/@me', {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(5_000),
     });
   } catch {
     throw new DiscordOAuthError('Discordユーザーを確認できませんでした。');
   }
-  const user = await response.json().catch(() => null) as { id?: string; username?: string; global_name?: string | null } | null;
-  if (!response.ok || !user?.id) throw new DiscordOAuthError('Discordの認証が無効です。');
-  return { id: user.id };
+  const authorization = await response.json().catch(() => null) as {
+    application?: { id?: string };
+    scopes?: string[];
+    user?: { id?: string };
+  } | null;
+  const scopes = new Set(authorization?.scopes ?? []);
+  if (
+    !response.ok
+    || authorization?.application?.id !== clientId
+    || !authorization.user?.id
+    || !scopes.has('identify')
+    || !scopes.has('rpc.activities.write')
+  ) {
+    throw new DiscordOAuthError('Discordの認証が無効です。');
+  }
+  return { id: authorization.user.id };
 }
