@@ -7,17 +7,18 @@ import { useDiscordActivity } from './DiscordActivityProvider';
 const phaseLabels = { focus: '集中', shortBreak: '小休憩', longBreak: '長休憩' } as const;
 
 export default function DiscordActivityPanel({ state }: { state: PublicTimerState }) {
-  const { embedded, participants, error, invite, setTimerPresence } = useDiscordActivity();
+  const { embedded, authenticated, participants, error, invite, setTimerPresence } = useDiscordActivity();
   const [message, setMessage] = useState('');
 
   useEffect(() => {
+    if (!authenticated) return;
     const phase = phaseLabels[state.phase];
     void setTimerPresence({
       details: state.isRunning ? `${phase}中` : `${phase}・一時停止`,
       state: '仲間とタイマーを同期中',
       endsAt: state.isRunning && state.phaseEndsAt ? state.phaseEndsAt : undefined,
     }).catch(() => undefined);
-  }, [setTimerPresence, state.isRunning, state.phase, state.phaseEndsAt, state.version]);
+  }, [authenticated, setTimerPresence, state.isRunning, state.phase, state.phaseEndsAt, state.version]);
 
   if (!embedded) return null;
 

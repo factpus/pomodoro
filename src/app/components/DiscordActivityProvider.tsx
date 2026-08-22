@@ -14,6 +14,7 @@ interface PresenceInput {
 
 interface ActivityContextValue {
   embedded: boolean;
+  authenticated: boolean;
   participants: number;
   error: string;
   invite: () => Promise<void>;
@@ -22,6 +23,7 @@ interface ActivityContextValue {
 
 const ActivityContext = createContext<ActivityContextValue>({
   embedded: false,
+  authenticated: false,
   participants: 0,
   error: '',
   invite: async () => undefined,
@@ -42,8 +44,8 @@ export default function DiscordActivityProvider({ children }: { children: React.
   const router = useRouter();
   const pathname = usePathname();
   const sdkRef = useRef<DiscordSDK | null>(null);
-  const authenticatedRef = useRef(false);
   const [embedded, setEmbedded] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
   const [participants, setParticipants] = useState(0);
   const [error, setError] = useState('');
 
@@ -81,7 +83,8 @@ export default function DiscordActivityProvider({ children }: { children: React.
         }));
         const authentication = await sdk.commands.authenticate({ access_token: token.accessToken });
         if (!authentication) throw new Error('Discordユーザーを認証できませんでした。');
-        authenticatedRef.current = true;
+        if (cancelled) return;
+        setAuthenticated(true);
 
         if (window.location.pathname === '/') {
           const result = await responseJson<{ snapshot: RoomSnapshot; hostToken: string | null }>(await fetch('/api/discord/activity-room', {
@@ -99,7 +102,6 @@ export default function DiscordActivityProvider({ children }: { children: React.
 
     return () => {
       cancelled = true;
-      authenticatedRef.current = false;
       if (cleanup) void cleanup();
     };
   }, [router]);
@@ -110,18 +112,18 @@ export default function DiscordActivityProvider({ children }: { children: React.
   }, []);
 
   const setTimerPresence = useCallback(async (input: PresenceInput) => {
-    if (!sdkRef.current || !authenticatedRef.current) return;
+    if (!sdkRef.current || !authenticated) return;
     await sdkRef.current.commands.setActivity({
       activity: {
         type: 0,
         details: input.details,
         state: input.state,
-        timestamps: input.endsAt ? { end: Math.floor(input.endsAt / 1000) } : undefined,
+        timestamps: input.endsAt ? { end: input.endsAt } : undefined,
         instance: true,
       },
     });
-  }, []);
+  }, [authenticated]);
 
-  const value = useMemo(() => ({ embedded, participants, error, invite, setTimerPresence }), [embedded, error, invite, participants, setTimerPresence]);
+  const value = useMemo(() => ({ embedded, authenticated, participants, error, invite, setTimerPresence }), [authenticated, embedded, error, invite, participants, setTimerPresence]);
   return <ActivityContext.Provider value={value}>{children}{embedded && error && pathname === '/' && <p className="activity-global-error" role="alert">{error} Web版として操作できます。</p>}</ActivityContext.Provider>;
 }
