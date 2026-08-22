@@ -45,6 +45,15 @@ export const hostTransferClientSchema = z.object({
   clientId: z.string().uuid(),
 });
 
+export const discordOAuthCodeSchema = z.object({
+  code: z.string().trim().min(1).max(2048),
+});
+
+export const discordActivityRoomSchema = z.object({
+  instanceId: z.string().trim().min(1).max(128),
+  clientId: z.string().uuid(),
+});
+
 export function minutesToSettings(input: z.infer<typeof timerSettingsSchema>) {
   return {
     focusSeconds: input.focusMinutes * 60,

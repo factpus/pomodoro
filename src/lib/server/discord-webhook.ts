@@ -6,7 +6,11 @@ import type { RoomRecord } from '@/lib/timer/types';
 type EncryptedSecret = NonNullable<RoomRecord['discordWebhook']>;
 
 export class IntegrationConfigurationError extends Error {}
-export class DiscordWebhookError extends Error {}
+export class DiscordWebhookError extends Error {
+  constructor(message: string, public readonly status?: number, public readonly permanent = false) {
+    super(message);
+  }
+}
 
 function encryptionKey() {
   const configured = process.env.INTEGRATION_ENCRYPTION_KEY?.trim();
@@ -61,22 +65,31 @@ function decryptWebhookUrl(secret: EncryptedSecret) {
 }
 
 export async function postDiscordWebhook(secret: EncryptedSecret, content: string) {
-  let response: Response;
-  try {
-    response = await fetch(`${decryptWebhookUrl(secret)}?wait=true`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        content,
-        username: 'Pomodoro Together',
-        allowed_mentions: { parse: [] },
-      }),
-      signal: AbortSignal.timeout(5_000),
-    });
-  } catch {
-    throw new DiscordWebhookError('Discordへ接続できませんでした。URLと接続状態を確認してください。');
-  }
-  if (!response.ok) {
-    throw new DiscordWebhookError(`Discordへの送信に失敗しました（${response.status}）。`);
+  const url = `${decryptWebhookUrl(secret)}?wait=true`;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content,
+          username: 'Pomodoro Together',
+          allowed_mentions: { parse: [] },
+        }),
+        signal: AbortSignal.timeout(5_000),
+      });
+    } catch {
+      throw new DiscordWebhookError('Discordへ接続できませんでした。URLと接続状態を確認してください。');
+    }
+    if (response.ok) return;
+    if (response.status === 429 && attempt === 0) {
+      const seconds = Number(response.headers.get('retry-after') ?? 1);
+      const retryAfter = Number.isFinite(seconds) ? Math.min(2_000, Math.max(100, seconds * 1_000)) : 1_000;
+      await new Promise((resolve) => setTimeout(resolve, retryAfter));
+      continue;
+    }
+    const permanent = response.status === 401 || response.status === 404;
+    throw new DiscordWebhookError(`Discordへの送信に失敗しました（${response.status}）。`, response.status, permanent);
   }
 }

@@ -23,16 +23,17 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 5. 開発中だけ特定サーバーへ即時反映する場合は `DISCORD_GUILD_ID` も設定する。
 6. 環境変数を読み込んだ端末で `npm run discord:register` を一度実行する。
 
-コマンド応答は実行者だけに見えるephemeralメッセージです。ホストトークンはURLフラグメントで一度だけブラウザへ渡し、Session Storageへ保存後にアドレス欄から除去します。参加者へはアプリ内の共有ボタンで、トークンを含まないURLを送ります。
+コマンド応答は実行者だけに見えるephemeralメッセージでホスト用ボタンを返し、Interaction follow-upでチャンネルへ参加者用ボタンを公開投稿します。ホストトークンはURLフラグメントで一度だけブラウザへ渡し、Session Storageへ保存後にアドレス欄から除去します。
 
 ## 3. Discord Activity
 
 1. Developer PortalでActivitiesを有効化する。
 2. Activity URL Mappingで `/` をVercelの公開オリジンへ割り当てる。
-3. Application IDを `NEXT_PUBLIC_DISCORD_CLIENT_ID` に設定して再デプロイする。
-4. ActivityのEntry Pointを設定し、Discordデスクトップ・Web・モバイルで起動確認する。
+3. OAuth2 Redirectsへ `https://127.0.0.1` を追加する。Embedded App SDKがActivity内の戻り処理を担当するための必須設定です。
+4. OAuth2 Client Secretを `DISCORD_CLIENT_SECRET`、Application IDを `NEXT_PUBLIC_DISCORD_CLIENT_ID` に設定して再デプロイする。
+5. ActivityのEntry Pointを設定し、Discordデスクトップ・Web・モバイルで起動確認する。
 
-Discord内で起動された場合だけEmbedded App SDKを初期化し、Activity参加人数と公式の招待ダイアログを表示します。初期化できない場合は通常のWeb版へフォールバックします。OAuthを必要とするユーザー情報や音声権限は要求しません。
+Discord内で起動された場合だけEmbedded App SDKを初期化し、`identify` と `rpc.activities.write` を要求します。OAuthコードはサーバーで交換し、アクセストークンは永続保存しません。同じActivity `instance_id` の参加者は同じルームへ自動参加し、最初の参加者だけがホストになります。Rich Presenceには集中・休憩・一時停止と終了時刻だけを表示します。音声権限は要求しません。
 
 ## リリース確認
 
@@ -41,4 +42,6 @@ Discord内で起動された場合だけEmbedded App SDKを初期化し、Activi
 - 共有URLを開いた別ブラウザは参加者になる
 - Webhookの接続テスト、開始、切替、解除が動作する
 - Activity内の招待と参加人数が動作する
+- 同じActivityへ参加した2人が同じルームへ自動参加する
+- 集中開始・一時停止・休憩でRich Presenceが更新される
 - Discord未設定の通常ブラウザでエラーが出ない
