@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { prepareAudioOnce } from '@/lib/client/audio';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
 import { fetchPublicRoom, sendCommand, sendHeartbeat } from '@/lib/client/rooms';
+import { shouldAcceptSnapshotVersion } from '@/lib/client/snapshot-order';
 import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand, TimerPhase } from '@/lib/timer/types';
 import ShareActions from './ShareActions';
 import DiscordWebhookSettings from './DiscordWebhookSettings';
@@ -26,12 +28,15 @@ export default function Timer({ roomId }: { roomId: string }) {
   const tokenRef = useRef<string | null>(null);
   const clientRef = useRef('');
   const serverOffsetRef = useRef(0);
+  const latestVersionRef = useRef<number | null>(null);
   const previousPhaseRef = useRef<TimerPhase | null>(null);
   const focusAudioRef = useRef<HTMLAudioElement>(null);
   const breakAudioRef = useRef<HTMLAudioElement>(null);
   const interactedRef = useRef(false);
 
   const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot) => {
+    if (!shouldAcceptSnapshotVersion(latestVersionRef.current, next.state.version)) return;
+    latestVersionRef.current = next.state.version;
     const receivedAt = Date.now();
     if ('role' in next && next.role === 'participant' && tokenRef.current) {
       sessionStorage.removeItem(hostTokenKey(roomId));
@@ -58,6 +63,7 @@ export default function Timer({ roomId }: { roomId: string }) {
   }, [roomId]);
 
   useEffect(() => {
+    latestVersionRef.current = null;
     const notificationTimer = window.setTimeout(() => {
       setNotificationPermission('Notification' in window ? Notification.permission : 'unsupported');
     }, 0);
@@ -137,7 +143,9 @@ export default function Timer({ roomId }: { roomId: string }) {
     setHostToken(token);
   }
 
-  const interact = () => { interactedRef.current = true; focusAudioRef.current?.load(); breakAudioRef.current?.load(); };
+  const interact = () => {
+    interactedRef.current = prepareAudioOnce(interactedRef.current, [focusAudioRef.current, breakAudioRef.current]);
+  };
   const role = snapshot?.role;
   const running = snapshot?.state.isRunning ?? false;
   const phase = snapshot?.state.phase ?? 'focus';
