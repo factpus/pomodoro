@@ -46,3 +46,14 @@ export function mergeAuthenticatedSnapshot<T extends { state: unknown }>(
   if (acceptance.timer) return { ...current, state: incoming.state };
   return current;
 }
+
+export function shouldRevokeHostToken(
+  currentToken: string | null,
+  requestToken: string | null | undefined,
+  responseRole: 'host' | 'participant',
+) {
+  return responseRole === 'participant'
+    && currentToken !== null
+    && requestToken !== undefined
+    && requestToken === currentToken;
+}

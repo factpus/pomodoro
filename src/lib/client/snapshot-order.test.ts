@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeAuthenticatedSnapshot, shouldAcceptSnapshot, snapshotAcceptance } from './snapshot-order';
+import { mergeAuthenticatedSnapshot, shouldAcceptSnapshot, shouldRevokeHostToken, snapshotAcceptance } from './snapshot-order';
 
 describe('shouldAcceptSnapshot', () => {
   it('accepts the first snapshot', () => {
@@ -91,5 +91,19 @@ describe('mergeAuthenticatedSnapshot', () => {
   it('does not regress metadata when only timer state is accepted', () => {
     expect(mergeAuthenticatedSnapshot(current, incoming, { timer: true, metadata: false }))
       .toEqual({ state: 'older timer', role: 'participant', hostTransfer: 'incoming' });
+  });
+});
+
+describe('shouldRevokeHostToken', () => {
+  it('does not revoke a new token from a response requested with the old token', () => {
+    expect(shouldRevokeHostToken('new-token', 'old-token', 'participant')).toBe(false);
+  });
+
+  it('revokes a rejected token when the response tested the current token', () => {
+    expect(shouldRevokeHostToken('revoked-token', 'revoked-token', 'participant')).toBe(true);
+  });
+
+  it('does not infer credential validity from responses without request context', () => {
+    expect(shouldRevokeHostToken('current-token', undefined, 'participant')).toBe(false);
   });
 });
