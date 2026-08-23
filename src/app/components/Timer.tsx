@@ -42,7 +42,12 @@ export default function Timer({ roomId }: { roomId: string }) {
       latestAuthenticatedSnapshotRef.current = null;
       previousPhaseRef.current = null;
     }
-    const watermark = { generation: next.generation, version: next.state.version, serverNow: next.state.serverNow };
+    const watermark = {
+      generation: next.generation,
+      revision: next.revision,
+      version: next.state.version,
+      serverNow: next.state.serverNow,
+    };
     const authenticated = 'role' in next;
     const acceptance = snapshotAcceptance(
       latestTimerSnapshotRef.current,

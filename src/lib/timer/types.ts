@@ -27,6 +27,7 @@ export interface PublicTimerState extends TimerState {
 
 export interface RoomRecord {
   roomId: string;
+  revision: number;
   hostTokenHash: string;
   hostClientId?: string;
   state: TimerState;
@@ -57,6 +58,7 @@ export type HostTransferSnapshot =
 export interface RoomSnapshot {
   roomId: string;
   generation: number;
+  revision: number;
   state: PublicTimerState;
   participantCount: number;
   role: 'host' | 'participant';

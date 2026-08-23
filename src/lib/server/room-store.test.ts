@@ -12,6 +12,9 @@ describe('Discord Activity rooms', () => {
     expect(first.snapshot.roomId).toBe(second.snapshot.roomId);
     expect(first.snapshot.generation).toBe(1_800_000_000_000);
     expect(second.snapshot.generation).toBe(first.snapshot.generation);
+    expect(first.snapshot.revision).toBe(1);
+    expect(retry.snapshot.revision).toBe(2);
+    expect(second.snapshot.revision).toBe(3);
     expect(first.snapshot.role).toBe('host');
     expect(first.hostToken).toBe(creatorToken);
     expect(retry.snapshot.role).toBe('host');

@@ -8,7 +8,9 @@ Vercel Functionsは常駐プロセスを保証しないため、Socket.IOサー�
 
 Redisに保存するタイマー状態には `phaseEndsAt`、`pausedRemainingSeconds`、`version`、各時間設定、完了回数を含めます。稼働中の残り時間はカウンターではなく `phaseEndsAt - serverNow` から算出するため、バックグラウンドタブや一時切断でドリフトしません。
 
-公開・認証済みの各スナップショットは、ルームの `createdAt` を `generation` として含めます。クライアントは `generation`、`version`、`serverNow` の順で応答を比較し、遅着応答による巻き戻りと、TTL失効後に同名再作成されたルームへの世代交代を両立します。
+公開・認証済みの各スナップショットは、ルームの `createdAt` を `generation` として含めます。クライアントはタイマー状態を `generation`、`version`、`serverNow` の順で比較し、遅着応答による巻き戻りと、TTL失効後に同名再作成されたルームへの世代交代を両立します。
+
+ホスト権限、移譲、参加者、連携状態などの認証済みメタデータは、Redisロック内の保存時に単調増加する `revision` で判定します。リクエスト開始時刻ではなく実際のコミット順を使うことで、heartbeatとホスト移譲が競合しても新しい権限を巻き戻しません。
 
 ## 整合性
 
