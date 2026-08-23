@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeAuthenticatedSnapshot, shouldAcceptSnapshot, shouldRevokeHostToken, snapshotAcceptance } from './snapshot-order';
+import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldAcceptSnapshot, shouldRevokeHostToken, snapshotAcceptance } from './snapshot-order';
 
 describe('shouldAcceptSnapshot', () => {
   it('accepts the first snapshot', () => {
@@ -105,5 +105,21 @@ describe('shouldRevokeHostToken', () => {
 
   it('does not infer credential validity from responses without request context', () => {
     expect(shouldRevokeHostToken('current-token', undefined, 'participant')).toBe(false);
+  });
+});
+
+describe('isCredentialContextCurrent', () => {
+  it('rejects role metadata produced with an obsolete token', () => {
+    expect(isCredentialContextCurrent('new-token', 'old-token')).toBe(false);
+    expect(isCredentialContextCurrent('new-token', null)).toBe(false);
+  });
+
+  it('accepts metadata produced with the current token', () => {
+    expect(isCredentialContextCurrent('current-token', 'current-token')).toBe(true);
+    expect(isCredentialContextCurrent(null, null)).toBe(true);
+  });
+
+  it('accepts server-authorized responses that do not use the current token', () => {
+    expect(isCredentialContextCurrent('new-token', undefined)).toBe(true);
   });
 });

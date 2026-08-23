@@ -8,7 +8,7 @@ interface SharedProps {
   roomId: string;
   clientId: string;
   snapshot: RoomSnapshot;
-  onUpdate: (snapshot: RoomSnapshot) => void;
+  onUpdate: (snapshot: RoomSnapshot, requestToken?: string | null) => void;
 }
 
 export function HostTransferBadge({ roomId, clientId, snapshot, token, onUpdate }: SharedProps & { token: string | null }) {
@@ -20,7 +20,7 @@ export function HostTransferBadge({ roomId, clientId, snapshot, token, onUpdate 
     setBusy(true);
     setMessage('');
     try {
-      onUpdate(await requestHostTransfer(roomId, clientId, targetCandidateId, token));
+      onUpdate(await requestHostTransfer(roomId, clientId, targetCandidateId, token), token);
       setMessage('相手の承認を待っています。');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '移譲を依頼できませんでした。');
@@ -33,7 +33,7 @@ export function HostTransferBadge({ roomId, clientId, snapshot, token, onUpdate 
     setBusy(true);
     setMessage('');
     try {
-      onUpdate(await cancelHostTransfer(roomId, clientId, token));
+      onUpdate(await cancelHostTransfer(roomId, clientId, token), token);
       setMessage('移譲依頼を取り消しました。');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '取り消せませんでした。');

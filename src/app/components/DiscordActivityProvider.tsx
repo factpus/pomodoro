@@ -115,6 +115,7 @@ export default function DiscordActivityProvider({ children }: { children: React.
         console.error(`[Discord Activity] connection failed at ${stage}`, caught);
         if (!cancelled) {
           const detail = caught instanceof Error ? `: ${caught.message}` : '';
+          setEmbedded(true);
           setError(`Discordとの接続に失敗しました（${connectionStageLabels[stage]}）${detail}`);
         }
       }

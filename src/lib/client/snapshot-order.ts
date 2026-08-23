@@ -57,3 +57,10 @@ export function shouldRevokeHostToken(
     && requestToken !== undefined
     && requestToken === currentToken;
 }
+
+export function isCredentialContextCurrent(
+  currentToken: string | null,
+  requestToken: string | null | undefined,
+) {
+  return requestToken === undefined || requestToken === currentToken;
+}

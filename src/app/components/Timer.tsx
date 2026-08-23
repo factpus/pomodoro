@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { prepareAudioOnce } from '@/lib/client/audio';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
 import { fetchPublicRoom, sendCommand, sendHeartbeat } from '@/lib/client/rooms';
-import { mergeAuthenticatedSnapshot, shouldRevokeHostToken, snapshotAcceptance, type SnapshotWatermark } from '@/lib/client/snapshot-order';
+import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldRevokeHostToken, snapshotAcceptance, type SnapshotWatermark } from '@/lib/client/snapshot-order';
 import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand, TimerPhase } from '@/lib/timer/types';
 import ShareActions from './ShareActions';
 import DiscordWebhookSettings from './DiscordWebhookSettings';
@@ -49,12 +49,16 @@ export default function Timer({ roomId }: { roomId: string }) {
       serverNow: next.state.serverNow,
     };
     const authenticated = 'role' in next;
-    const acceptance = snapshotAcceptance(
+    const orderedAcceptance = snapshotAcceptance(
       latestTimerSnapshotRef.current,
       latestAuthenticatedSnapshotRef.current,
       watermark,
       authenticated,
     );
+    const acceptance = {
+      ...orderedAcceptance,
+      metadata: orderedAcceptance.metadata && isCredentialContextCurrent(tokenRef.current, requestToken),
+    };
     if (acceptance.timer) latestTimerSnapshotRef.current = watermark;
     if (acceptance.metadata) latestAuthenticatedSnapshotRef.current = watermark;
     const receivedAt = Date.now();
