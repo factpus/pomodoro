@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import type { DiscordSDK } from '@discord/embedded-app-sdk';
+import { getInviteAvailability, type InviteAvailability } from '@/lib/client/discord-invite';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
 import type { RoomSnapshot } from '@/lib/timer/types';
 
@@ -17,6 +18,7 @@ interface ActivityContextValue {
   authenticated: boolean;
   participants: number;
   error: string;
+  inviteAvailability: InviteAvailability;
   invite: () => Promise<void>;
   setTimerPresence: (input: PresenceInput) => Promise<void>;
 }
@@ -35,6 +37,7 @@ const ActivityContext = createContext<ActivityContextValue>({
   authenticated: false,
   participants: 0,
   error: '',
+  inviteAvailability: 'checking',
   invite: async () => undefined,
   setTimerPresence: async () => undefined,
 });
@@ -59,6 +62,7 @@ export default function DiscordActivityProvider({ children }: { children: React.
   const [authenticated, setAuthenticated] = useState(false);
   const [participants, setParticipants] = useState(0);
   const [error, setError] = useState('');
+  const [inviteAvailability, setInviteAvailability] = useState<InviteAvailability>('checking');
 
   useEffect(() => {
     const applicationId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
@@ -71,7 +75,7 @@ export default function DiscordActivityProvider({ children }: { children: React.
     void (async () => {
       let stage: ConnectionStage = 'sdk-ready';
       try {
-        const { DiscordSDK, Events } = await import('@discord/embedded-app-sdk');
+        const { DiscordSDK, Events, Permissions, PermissionUtils } = await import('@discord/embedded-app-sdk');
         const sdk = new DiscordSDK(applicationId, { disableConsoleLogOverride: true });
         sdkRef.current = sdk;
         await sdk.ready();
@@ -99,6 +103,24 @@ export default function DiscordActivityProvider({ children }: { children: React.
         accessTokenRef.current = token.accessToken;
         setAuthenticated(true);
 
+        if (!sdk.guildId || !sdk.channelId) {
+          setInviteAvailability(getInviteAvailability({ authenticated: true, guildId: sdk.guildId, channelId: sdk.channelId }));
+        } else {
+          try {
+            const { permissions } = await sdk.commands.getChannelPermissions();
+            if (cancelled) return;
+            setInviteAvailability(getInviteAvailability({
+              authenticated: true,
+              guildId: sdk.guildId,
+              channelId: sdk.channelId,
+              canCreateInvite: PermissionUtils.can(Permissions.CREATE_INSTANT_INVITE, permissions),
+            }));
+          } catch (caught) {
+            console.warn('[Discord Activity] invite permission check failed', caught);
+            if (!cancelled) setInviteAvailability(getInviteAvailability({ authenticated: true, guildId: sdk.guildId, channelId: sdk.channelId }));
+          }
+        }
+
         const updateParticipants = (data: { participants: unknown[] }) => {
           if (!cancelled) setParticipants(data.participants.length);
         };
@@ -116,6 +138,7 @@ export default function DiscordActivityProvider({ children }: { children: React.
         if (!cancelled) {
           const detail = caught instanceof Error ? `: ${caught.message}` : '';
           setEmbedded(true);
+          setInviteAvailability('unknown');
           setError(`Discordとの接続に失敗しました（${connectionStageLabels[stage]}）${detail}`);
         }
       }
@@ -156,9 +179,35 @@ export default function DiscordActivityProvider({ children }: { children: React.
   }, [authenticated, pathname, router]);
 
   const invite = useCallback(async () => {
-    if (!sdkRef.current) throw new Error('Discord Activityに接続されていません。');
-    await sdkRef.current.commands.openInviteDialog();
-  }, []);
+    const sdk = sdkRef.current;
+    if (!sdk || !authenticated) throw new Error('Discord認証が完了していません。リンク共有を利用してください。');
+    if (!sdk.guildId || !sdk.channelId) {
+      setInviteAvailability(getInviteAvailability({ authenticated: true, guildId: sdk.guildId, channelId: sdk.channelId }));
+      throw new Error('サーバーのボイスチャンネルからActivityを開くと、Discordの招待画面を利用できます。');
+    }
+    const { Permissions, PermissionUtils, RPCErrorCodes } = await import('@discord/embedded-app-sdk');
+    try {
+      const { permissions } = await sdk.commands.getChannelPermissions();
+      const canCreateInvite = PermissionUtils.can(Permissions.CREATE_INSTANT_INVITE, permissions);
+      setInviteAvailability(getInviteAvailability({ authenticated: true, guildId: sdk.guildId, channelId: sdk.channelId, canCreateInvite }));
+      if (!canCreateInvite) {
+        throw new Error('このチャンネルで招待を作成する権限がありません。');
+      }
+      await sdk.commands.openInviteDialog();
+    } catch (caught) {
+      const code = typeof caught === 'object' && caught !== null && 'code' in caught ? caught.code : undefined;
+      if (code === RPCErrorCodes.INVALID_CHANNEL) {
+        setInviteAvailability('voice-channel-required');
+        throw new Error('このチャンネルではDiscordの招待画面を利用できません。');
+      }
+      if (code === RPCErrorCodes.INVALID_PERMISSIONS) {
+        setInviteAvailability('permission-required');
+        throw new Error('このチャンネルで招待を作成する権限がありません。');
+      }
+      if (caught instanceof Error) throw caught;
+      throw new Error('Discordの招待画面を開けませんでした。');
+    }
+  }, [authenticated]);
 
   const setTimerPresence = useCallback(async (input: PresenceInput) => {
     if (!sdkRef.current || !authenticated) return;
@@ -173,6 +222,6 @@ export default function DiscordActivityProvider({ children }: { children: React.
     });
   }, [authenticated]);
 
-  const value = useMemo(() => ({ embedded, authenticated, participants, error, invite, setTimerPresence }), [authenticated, embedded, error, invite, participants, setTimerPresence]);
+  const value = useMemo(() => ({ embedded, authenticated, participants, error, inviteAvailability, invite, setTimerPresence }), [authenticated, embedded, error, invite, inviteAvailability, participants, setTimerPresence]);
   return <ActivityContext.Provider value={value}>{children}{embedded && error && pathname === '/' && <p className="activity-global-error" role="alert">{error} Web版として操作できます。</p>}</ActivityContext.Provider>;
 }

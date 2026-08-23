@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { prepareAudioOnce } from '@/lib/client/audio';
+import { browserAudioPreferenceStorage, DEFAULT_AMBIENT_MUTED, DEFAULT_AMBIENT_VOLUME, readAudioPreferences, writeAudioPreferences } from '@/lib/client/audio-preferences';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
 import { fetchPublicRoom, sendCommand, sendHeartbeat } from '@/lib/client/rooms';
 import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldApplyRequestFailure, shouldRevokeHostToken, snapshotAcceptance, type SnapshotWatermark } from '@/lib/client/snapshot-order';
@@ -20,8 +21,9 @@ export default function Timer({ roomId }: { roomId: string }) {
   const [remaining, setRemaining] = useState(0);
   const [connection, setConnection] = useState<'connecting' | 'connected' | 'reconnecting' | 'missing'>('connecting');
   const [error, setError] = useState('');
-  const [isMuted, setIsMuted] = useState(true);
-  const [volume, setVolume] = useState(0.35);
+  const [isMuted, setIsMuted] = useState(DEFAULT_AMBIENT_MUTED);
+  const [volume, setVolume] = useState(DEFAULT_AMBIENT_VOLUME);
+  const [audioPreferencesLoaded, setAudioPreferencesLoaded] = useState(false);
   const [hostToken, setHostToken] = useState<string | null>(null);
   const [currentClientId, setCurrentClientId] = useState('');
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
@@ -35,6 +37,21 @@ export default function Timer({ roomId }: { roomId: string }) {
   const focusAudioRef = useRef<HTMLAudioElement>(null);
   const breakAudioRef = useRef<HTMLAudioElement>(null);
   const interactedRef = useRef(false);
+
+  useEffect(() => {
+    const preferences = readAudioPreferences(browserAudioPreferenceStorage());
+    const restore = window.setTimeout(() => {
+      setVolume(preferences.volume);
+      setIsMuted(preferences.muted);
+      setAudioPreferencesLoaded(true);
+    }, 0);
+    return () => window.clearTimeout(restore);
+  }, []);
+
+  useEffect(() => {
+    if (!audioPreferencesLoaded) return;
+    writeAudioPreferences(browserAudioPreferenceStorage(), { volume, muted: isMuted });
+  }, [audioPreferencesLoaded, isMuted, volume]);
 
   const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot, requestToken?: string | null) => {
     const previousGeneration = latestTimerSnapshotRef.current?.generation ?? null;
@@ -208,7 +225,7 @@ export default function Timer({ roomId }: { roomId: string }) {
     <main className={`room-shell phase-${phase}`}>
       <nav className="room-nav"><Link href="/" className="brand">Pomodoro Together</Link><div className="flex items-center gap-2"><span className={`status ${connection}`}>{connection === 'connected' ? '同期中' : connection === 'connecting' ? '接続中' : '再接続中'}</span>{snapshot?.role === 'host' && currentClientId ? <HostTransferBadge roomId={roomId} clientId={currentClientId} snapshot={snapshot} token={hostToken} onUpdate={acceptSnapshot} /> : <span className="badge">参加者</span>}</div></nav>
       <section className="timer-card" aria-live="polite">
-        {snapshot && <DiscordActivityPanel state={snapshot.state} />}
+        {snapshot && <DiscordActivityPanel roomId={roomId} state={snapshot.state} />}
         {snapshot && currentClientId && <HostTransferOffer roomId={roomId} clientId={currentClientId} snapshot={snapshot} onUpdate={acceptSnapshot} onToken={receiveHostToken} />}
         <div className="timer-head"><div><p className="eyebrow">{phaseLabels[phase]}</p><h1>{roomId}</h1></div><VolumeControl volume={volume} setVolume={setVolume} isMuted={isMuted} setIsMuted={setIsMuted} onInteraction={interact} /></div>
         <div className="time" role="timer" aria-label={`残り${Math.floor(remaining / 60)}分${remaining % 60}秒`}>{minutes}<span>:</span>{seconds}</div>

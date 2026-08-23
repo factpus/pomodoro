@@ -1,6 +1,6 @@
 # アーキテクチャ
 
-最終更新: 2026-08-22
+最終更新: 2026-08-24
 
 ## 状態同期
 
@@ -38,7 +38,7 @@ Discordコマンドから作成する場合は、実行者だけに見える応�
 
 Discord Webhookの送信失敗はタイマー操作から分離し、共有状態を停止させません。429だけを1回、処理期限内でDiscord指定の待機時間を短縮せずに再試行し、401/404で失効を確認した接続は自動解除します。Discord InteractionはEd25519署名を検証します。
 
-Embedded App SDKはDiscord iframe内かつ設定済みの場合だけ初期化し、通常ブラウザでは読み込みません。ActivityではDiscord OAuthをサーバー側で交換し、認可情報のApplication ID、`identify`・`rpc.activities.write` scope、ユーザーIDを検証してから、`instance_id` のハッシュで同一インスタンス用ルームを決定します。最初の認証ユーザー用ホストトークンはApplication秘密鍵・インスタンスID・DiscordユーザーIDからHMACで導出し、ルームにはそのSHA-256ハッシュだけを保存します。同じユーザーによる作成再試行では資格を復元できますが、別ユーザーには返しません。Providerは認証後のpathnameを監視し、Activity内でホームへ戻った場合も保持中の資格情報とDiscordクエリから同じルームへ再参加させます。アクセストークン、DiscordユーザーID、ユーザー名は永続化しません。Rich Presenceにはフェーズ、実行状態、終了時刻だけを送信します。CSPはDiscordからの埋め込みを許可しながら、その他のframe ancestorと不要な端末権限を制限します。
+Embedded App SDKはDiscord iframe内かつ設定済みの場合だけ初期化し、通常ブラウザでは読み込みません。ActivityではDiscord OAuthをサーバー側で交換し、認可情報のApplication ID、`identify`・`rpc.activities.write` scope、ユーザーIDを検証してから、`instance_id` のハッシュで同一インスタンス用ルームを決定します。最初の認証ユーザー用ホストトークンはApplication秘密鍵・インスタンスID・DiscordユーザーIDからHMACで導出し、ルームにはそのSHA-256ハッシュだけを保存します。同じユーザーによる作成再試行では資格を復元できますが、別ユーザーには返しません。Providerは認証後のpathnameを監視し、Activity内でホームへ戻った場合も保持中の資格情報とDiscordクエリから同じルームへ再参加させます。アクセストークン、DiscordユーザーID、ユーザー名は永続化しません。Rich Presenceにはフェーズ、実行状態、終了時刻だけを送信します。招待ダイアログはDiscord認証、サーバーチャンネル、招待作成権限を確認してから有効化し、利用できない場合は理由とトークンを含まない通常の参加URLを提示します。CSPはDiscordからの埋め込みを許可しながら、その他のframe ancestorと不要な端末権限を制限します。
 
 `/api/health` はRedis接続の可否を返します。運用ログはイベント名を持つJSONへ統一し、トークン、Webhook URL、Discordアクセストークン、ルーム名を記録しません。
 
