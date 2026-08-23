@@ -80,3 +80,20 @@ test('health endpoint reports the local fallback without caching', async ({ requ
   expect(await response.json()).toEqual({ status: 'degraded', storage: 'memory' });
   expect(response.headers()['cache-control']).toBe('no-store');
 });
+
+test('ambient audio starts quiet and preserves the device preference', async ({ page }) => {
+  const roomId = `audio-${Date.now()}`;
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'ルーム名', exact: true }).fill(roomId);
+  await page.getByRole('button', { name: 'ルームを作る' }).click();
+
+  const volume = page.getByRole('slider', { name: '環境音の音量' });
+  await expect(volume).toHaveValue('0.2');
+  await page.getByRole('button', { name: '環境音のミュートを解除' }).click();
+  await volume.fill('0.45');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('pomodoro-together:audio-preferences'))).toBe(JSON.stringify({ volume: 0.45, muted: false }));
+
+  await page.reload();
+  await expect(page.getByRole('slider', { name: '環境音の音量' })).toHaveValue('0.45');
+  await expect(page.getByRole('button', { name: '環境音をミュート' })).toBeVisible();
+});
