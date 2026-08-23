@@ -49,7 +49,8 @@ Vercelの500エラー自体はFramework Presetが `Other` だったことが直�
 - [x] mainへマージし、本番デプロイを実行
 - [x] `https://pomodoro-app-five-khaki.vercel.app/` の公開応答（HTTP 200）を確認
 - [x] `/api/health` が `200 {"status":"ok","storage":"redis"}` を返すことを確認
-- [x] Playwrightの2クライアントE2Eで、作成・参加・開始・停止・再接続を確認
+- [x] ローカルのメモリストアを使うPlaywright 2クライアントE2Eで、作成・参加・開始・停止・再接続を確認
+- [ ] 本番のRedis経路を使い、異なる2ブラウザで作成・参加・開始・停止・再接続を確認
 - [ ] Discord Activityを公開する場合は、環境変数とDeveloper Portalを `DISCORD_SETUP.md` に従って設定し、Discordデスクトップ・Web・モバイル実機で確認
 
 Redis未接続の本番では、誤って不完全な共有モードを提供しないようAPIが503を返します。
