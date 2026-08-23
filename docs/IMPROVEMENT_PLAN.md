@@ -1,6 +1,6 @@
 # Pomodoro Together 改善記録
 
-最終更新: 2026-08-22
+最終更新: 2026-08-23
 
 ## 目的
 
@@ -43,12 +43,14 @@ Vercelの500エラー自体はFramework Presetが `Other` だったことが直�
 - Webhookの429再試行、失効時自動解除、Discord連携テストを追加
 - ヘルスチェック、構造化ログ、運用・監視手順を追加
 
-## 本番リリースの最終条件
+## 本番リリース状況
 
-- Vercel MarketplaceでUpstash Redisを作成し、`pomodoro-app` に接続する
-- mainへpushして本番デプロイを実行する
-- 異なる2ブラウザで、作成・参加・開始・停止・再接続を確認する
-- Discord連携を公開する場合は環境変数とDeveloper Portalを `DISCORD_SETUP.md` に従って設定する
+- [x] Vercel MarketplaceのUpstash Redisを `pomodoro-app` に接続
+- [x] mainへマージし、本番デプロイを実行
+- [x] `https://pomodoro-app-five-khaki.vercel.app/` の公開応答（HTTP 200）を確認
+- [x] `/api/health` が `200 {"status":"ok","storage":"redis"}` を返すことを確認
+- [x] Playwrightの2クライアントE2Eで、作成・参加・開始・停止・再接続を確認
+- [ ] Discord Activityを公開する場合は、環境変数とDeveloper Portalを `DISCORD_SETUP.md` に従って設定し、Discordデスクトップ・Web・モバイル実機で確認
 
 Redis未接続の本番では、誤って不完全な共有モードを提供しないようAPIが503を返します。
 
