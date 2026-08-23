@@ -1,3 +1,10 @@
-export function shouldAcceptSnapshotVersion(latestVersion: number | null, incomingVersion: number) {
-  return latestVersion === null || incomingVersion >= latestVersion;
+export interface SnapshotWatermark {
+  version: number;
+  serverNow: number;
+}
+
+export function shouldAcceptSnapshot(latest: SnapshotWatermark | null, incoming: SnapshotWatermark) {
+  return latest === null
+    || incoming.version > latest.version
+    || (incoming.version === latest.version && incoming.serverNow >= latest.serverNow);
 }

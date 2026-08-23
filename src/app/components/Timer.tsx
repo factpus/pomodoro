@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { prepareAudioOnce } from '@/lib/client/audio';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
 import { fetchPublicRoom, sendCommand, sendHeartbeat } from '@/lib/client/rooms';
-import { shouldAcceptSnapshotVersion } from '@/lib/client/snapshot-order';
+import { shouldAcceptSnapshot, type SnapshotWatermark } from '@/lib/client/snapshot-order';
 import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand, TimerPhase } from '@/lib/timer/types';
 import ShareActions from './ShareActions';
 import DiscordWebhookSettings from './DiscordWebhookSettings';
@@ -28,15 +28,16 @@ export default function Timer({ roomId }: { roomId: string }) {
   const tokenRef = useRef<string | null>(null);
   const clientRef = useRef('');
   const serverOffsetRef = useRef(0);
-  const latestVersionRef = useRef<number | null>(null);
+  const latestSnapshotRef = useRef<SnapshotWatermark | null>(null);
   const previousPhaseRef = useRef<TimerPhase | null>(null);
   const focusAudioRef = useRef<HTMLAudioElement>(null);
   const breakAudioRef = useRef<HTMLAudioElement>(null);
   const interactedRef = useRef(false);
 
   const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot) => {
-    if (!shouldAcceptSnapshotVersion(latestVersionRef.current, next.state.version)) return;
-    latestVersionRef.current = next.state.version;
+    const watermark = { version: next.state.version, serverNow: next.state.serverNow };
+    if (!shouldAcceptSnapshot(latestSnapshotRef.current, watermark)) return;
+    latestSnapshotRef.current = watermark;
     const receivedAt = Date.now();
     if ('role' in next && next.role === 'participant' && tokenRef.current) {
       sessionStorage.removeItem(hostTokenKey(roomId));
@@ -63,7 +64,7 @@ export default function Timer({ roomId }: { roomId: string }) {
   }, [roomId]);
 
   useEffect(() => {
-    latestVersionRef.current = null;
+    latestSnapshotRef.current = null;
     const notificationTimer = window.setTimeout(() => {
       setNotificationPermission('Notification' in window ? Notification.permission : 'unsupported');
     }, 0);
@@ -88,7 +89,15 @@ export default function Timer({ roomId }: { roomId: string }) {
         if (controller.signal.aborted) return;
         failures += 1;
         const message = caught instanceof Error ? caught.message : '同期できませんでした。';
-        if (message.includes('見つかりません')) setConnection('missing'); else setConnection('reconnecting');
+        if (message.includes('見つかりません')) {
+          latestSnapshotRef.current = null;
+          previousPhaseRef.current = null;
+          tokenRef.current = null;
+          sessionStorage.removeItem(hostTokenKey(roomId));
+          setSnapshot(null);
+          setHostToken(null);
+          setConnection('missing');
+        } else setConnection('reconnecting');
         setError(message);
       }
     };
