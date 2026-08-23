@@ -64,3 +64,7 @@ export function isCredentialContextCurrent(
 ) {
   return requestToken === undefined || requestToken === currentToken;
 }
+
+export function shouldApplyRequestFailure(startedAtAcceptedResponse: number, currentAcceptedResponse: number) {
+  return startedAtAcceptedResponse === currentAcceptedResponse;
+}

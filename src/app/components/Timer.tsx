@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { prepareAudioOnce } from '@/lib/client/audio';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
 import { fetchPublicRoom, sendCommand, sendHeartbeat } from '@/lib/client/rooms';
-import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldRevokeHostToken, snapshotAcceptance, type SnapshotWatermark } from '@/lib/client/snapshot-order';
+import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldApplyRequestFailure, shouldRevokeHostToken, snapshotAcceptance, type SnapshotWatermark } from '@/lib/client/snapshot-order';
 import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand, TimerPhase } from '@/lib/timer/types';
 import ShareActions from './ShareActions';
 import DiscordWebhookSettings from './DiscordWebhookSettings';
@@ -30,6 +30,7 @@ export default function Timer({ roomId }: { roomId: string }) {
   const serverOffsetRef = useRef(0);
   const latestTimerSnapshotRef = useRef<SnapshotWatermark | null>(null);
   const latestAuthenticatedSnapshotRef = useRef<SnapshotWatermark | null>(null);
+  const acceptedResponseRef = useRef(0);
   const previousPhaseRef = useRef<TimerPhase | null>(null);
   const focusAudioRef = useRef<HTMLAudioElement>(null);
   const breakAudioRef = useRef<HTMLAudioElement>(null);
@@ -61,6 +62,7 @@ export default function Timer({ roomId }: { roomId: string }) {
     };
     if (acceptance.timer) latestTimerSnapshotRef.current = watermark;
     if (acceptance.metadata) latestAuthenticatedSnapshotRef.current = watermark;
+    if (acceptance.timer || acceptance.metadata) acceptedResponseRef.current += 1;
     const receivedAt = Date.now();
     if (authenticated && acceptance.metadata && shouldRevokeHostToken(tokenRef.current, requestToken, next.role)) {
       sessionStorage.removeItem(hostTokenKey(roomId));
@@ -94,6 +96,7 @@ export default function Timer({ roomId }: { roomId: string }) {
   useEffect(() => {
     latestTimerSnapshotRef.current = null;
     latestAuthenticatedSnapshotRef.current = null;
+    acceptedResponseRef.current = 0;
     const notificationTimer = window.setTimeout(() => {
       setNotificationPermission('Notification' in window ? Notification.permission : 'unsupported');
     }, 0);
@@ -112,29 +115,33 @@ export default function Timer({ roomId }: { roomId: string }) {
 
     const sync = async () => {
       if (document.hidden) return;
+      const acceptedAtStart = acceptedResponseRef.current;
       try {
         acceptSnapshot(await fetchPublicRoom(roomId, controller.signal)); failures = 0;
       } catch (caught) {
         if (controller.signal.aborted) return;
+        if (!shouldApplyRequestFailure(acceptedAtStart, acceptedResponseRef.current)) return;
         failures += 1;
         const message = caught instanceof Error ? caught.message : '同期できませんでした。';
         if (message.includes('見つかりません')) {
           latestTimerSnapshotRef.current = null;
           latestAuthenticatedSnapshotRef.current = null;
           previousPhaseRef.current = null;
-          tokenRef.current = null;
-          sessionStorage.removeItem(hostTokenKey(roomId));
           setSnapshot(null);
-          setHostToken(null);
           setConnection('missing');
         } else setConnection('reconnecting');
         setError(message);
       }
     };
     const beat = async () => {
+      const acceptedAtStart = acceptedResponseRef.current;
       const requestToken = tokenRef.current;
       try { acceptSnapshot(await sendHeartbeat(roomId, clientRef.current, requestToken), requestToken); failures = 0; }
-      catch { failures += 1; if (failures > 1) setConnection('reconnecting'); }
+      catch {
+        if (!shouldApplyRequestFailure(acceptedAtStart, acceptedResponseRef.current)) return;
+        failures += 1;
+        if (failures > 1) setConnection('reconnecting');
+      }
     };
     void beat();
     const syncTimer = window.setInterval(sync, 2_000);

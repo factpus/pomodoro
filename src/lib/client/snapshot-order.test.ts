@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldAcceptSnapshot, shouldRevokeHostToken, snapshotAcceptance } from './snapshot-order';
+import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldAcceptSnapshot, shouldApplyRequestFailure, shouldRevokeHostToken, snapshotAcceptance } from './snapshot-order';
 
 describe('shouldAcceptSnapshot', () => {
   it('accepts the first snapshot', () => {
@@ -121,5 +121,15 @@ describe('isCredentialContextCurrent', () => {
 
   it('accepts server-authorized responses that do not use the current token', () => {
     expect(isCredentialContextCurrent('new-token', undefined)).toBe(true);
+  });
+});
+
+describe('shouldApplyRequestFailure', () => {
+  it('ignores an old failure after a newer successful response was accepted', () => {
+    expect(shouldApplyRequestFailure(4, 5)).toBe(false);
+  });
+
+  it('applies a failure when no successful response arrived in the meantime', () => {
+    expect(shouldApplyRequestFailure(4, 4)).toBe(true);
   });
 });
