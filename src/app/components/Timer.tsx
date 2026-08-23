@@ -36,7 +36,13 @@ export default function Timer({ roomId }: { roomId: string }) {
   const interactedRef = useRef(false);
 
   const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot) => {
-    const watermark = { version: next.state.version, serverNow: next.state.serverNow };
+    const previousGeneration = latestTimerSnapshotRef.current?.generation ?? null;
+    const generationChanged = previousGeneration !== null && next.generation > previousGeneration;
+    if (generationChanged) {
+      latestAuthenticatedSnapshotRef.current = null;
+      previousPhaseRef.current = null;
+    }
+    const watermark = { generation: next.generation, version: next.state.version, serverNow: next.state.serverNow };
     const authenticated = 'role' in next;
     const acceptance = snapshotAcceptance(
       latestTimerSnapshotRef.current,
@@ -55,12 +61,14 @@ export default function Timer({ roomId }: { roomId: string }) {
     if (authenticated && (acceptance.timer || acceptance.metadata)) {
       setSnapshot((current) => mergeAuthenticatedSnapshot(current, next, acceptance));
     } else if (!authenticated && acceptance.timer) {
-      setSnapshot((current) => ({
-        ...next,
-        role: current?.role ?? 'participant',
-        participants: current?.participants,
-        hostTransfer: current?.hostTransfer,
-      }));
+      setSnapshot((current) => current && current.generation === next.generation
+        ? {
+            ...next,
+            role: current.role,
+            participants: current.participants,
+            hostTransfer: current.hostTransfer,
+          }
+        : { ...next, role: 'participant' });
     }
     setConnection('connected');
     setError('');

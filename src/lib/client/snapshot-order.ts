@@ -1,4 +1,5 @@
 export interface SnapshotWatermark {
+  generation: number;
   version: number;
   serverNow: number;
 }
@@ -10,8 +11,11 @@ export interface SnapshotAcceptance {
 
 export function shouldAcceptSnapshot(latest: SnapshotWatermark | null, incoming: SnapshotWatermark) {
   return latest === null
-    || incoming.version > latest.version
-    || (incoming.version === latest.version && incoming.serverNow >= latest.serverNow);
+    || incoming.generation > latest.generation
+    || (incoming.generation === latest.generation && (
+      incoming.version > latest.version
+      || (incoming.version === latest.version && incoming.serverNow >= latest.serverNow)
+    ));
 }
 
 export function snapshotAcceptance(
@@ -22,7 +26,9 @@ export function snapshotAcceptance(
 ) {
   return {
     timer: shouldAcceptSnapshot(latestTimer, incoming),
-    metadata: authenticated && shouldAcceptSnapshot(latestAuthenticated, incoming),
+    metadata: authenticated
+      && (latestTimer === null || incoming.generation >= latestTimer.generation)
+      && shouldAcceptSnapshot(latestAuthenticated, incoming),
   };
 }
 

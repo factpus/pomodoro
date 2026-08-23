@@ -3,52 +3,70 @@ import { mergeAuthenticatedSnapshot, shouldAcceptSnapshot, snapshotAcceptance } 
 
 describe('shouldAcceptSnapshot', () => {
   it('accepts the first snapshot', () => {
-    expect(shouldAcceptSnapshot(null, { version: 1, serverNow: 1_000 })).toBe(true);
+    expect(shouldAcceptSnapshot(null, { generation: 10, version: 1, serverNow: 1_000 })).toBe(true);
   });
 
   it('accepts a newer version regardless of request completion order', () => {
     expect(shouldAcceptSnapshot(
-      { version: 4, serverNow: 2_000 },
-      { version: 5, serverNow: 1_000 },
+      { generation: 10, version: 4, serverNow: 2_000 },
+      { generation: 10, version: 5, serverNow: 1_000 },
     )).toBe(true);
   });
 
   it('rejects a stale response that arrives after a command response', () => {
     expect(shouldAcceptSnapshot(
-      { version: 5, serverNow: 2_000 },
-      { version: 4, serverNow: 3_000 },
+      { generation: 10, version: 5, serverNow: 2_000 },
+      { generation: 10, version: 4, serverNow: 3_000 },
     )).toBe(false);
   });
 
   it('orders equal-version snapshots by server time', () => {
-    const latest = { version: 5, serverNow: 2_000 };
-    expect(shouldAcceptSnapshot(latest, { version: 5, serverNow: 2_001 })).toBe(true);
-    expect(shouldAcceptSnapshot(latest, { version: 5, serverNow: 1_999 })).toBe(false);
+    const latest = { generation: 10, version: 5, serverNow: 2_000 };
+    expect(shouldAcceptSnapshot(latest, { generation: 10, version: 5, serverNow: 2_001 })).toBe(true);
+    expect(shouldAcceptSnapshot(latest, { generation: 10, version: 5, serverNow: 1_999 })).toBe(false);
+  });
+
+  it('accepts a recreated room and rejects responses from the previous generation', () => {
+    const previous = { generation: 10, version: 20, serverNow: 2_000 };
+    expect(shouldAcceptSnapshot(previous, { generation: 11, version: 1, serverNow: 3_000 })).toBe(true);
+    expect(shouldAcceptSnapshot(
+      { generation: 11, version: 1, serverNow: 3_000 },
+      { generation: 10, version: 21, serverNow: 3_001 },
+    )).toBe(false);
   });
 });
 
 describe('snapshotAcceptance', () => {
   it('accepts authenticated metadata even when a newer public timer snapshot arrived first', () => {
     expect(snapshotAcceptance(
-      { version: 5, serverNow: 2_000 },
+      { generation: 10, version: 5, serverNow: 2_000 },
       null,
-      { version: 5, serverNow: 1_999 },
+      { generation: 10, version: 5, serverNow: 1_999 },
       true,
     )).toEqual({ timer: false, metadata: true });
   });
 
   it('does not accept metadata from an older authenticated response', () => {
     expect(snapshotAcceptance(
-      { version: 5, serverNow: 2_000 },
-      { version: 5, serverNow: 2_000 },
-      { version: 5, serverNow: 1_999 },
+      { generation: 10, version: 5, serverNow: 2_000 },
+      { generation: 10, version: 5, serverNow: 2_000 },
+      { generation: 10, version: 5, serverNow: 1_999 },
       true,
     )).toEqual({ timer: false, metadata: false });
   });
 
   it('never treats a public snapshot as authenticated metadata', () => {
-    expect(snapshotAcceptance(null, null, { version: 1, serverNow: 1_000 }, false))
+    expect(snapshotAcceptance(null, null, { generation: 10, version: 1, serverNow: 1_000 }, false))
       .toEqual({ timer: true, metadata: false });
+  });
+
+  it('rejects authenticated metadata from a previous room generation', () => {
+    expect(snapshotAcceptance(
+      { generation: 11, version: 1, serverNow: 3_000 },
+      { generation: 10, version: 20, serverNow: 2_000 },
+      { generation: 10, version: 21, serverNow: 3_001 },
+      true,
+    )).toEqual({ timer: false, metadata: false });
   });
 });
 

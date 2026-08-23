@@ -10,6 +10,8 @@ describe('Discord Activity rooms', () => {
     const retry = await joinDiscordActivityRoom(instanceId, randomUUID(), creatorToken, 1_800_000_000_500);
     const second = await joinDiscordActivityRoom(instanceId, randomUUID(), 'another-user-token', 1_800_000_001_000);
     expect(first.snapshot.roomId).toBe(second.snapshot.roomId);
+    expect(first.snapshot.generation).toBe(1_800_000_000_000);
+    expect(second.snapshot.generation).toBe(first.snapshot.generation);
     expect(first.snapshot.role).toBe('host');
     expect(first.hostToken).toBe(creatorToken);
     expect(retry.snapshot.role).toBe('host');

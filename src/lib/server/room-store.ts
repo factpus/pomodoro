@@ -86,6 +86,7 @@ function snapshot(room: RoomRecord, token: string | null, now: number, clientId?
     : undefined;
   return {
     roomId: room.roomId,
+    generation: room.createdAt,
     state: toPublicTimerState(room.state, now),
     participantCount: Object.keys(room.participants).length,
     role,
@@ -268,6 +269,7 @@ export async function getPublicRoom(roomId: string, now = Date.now()): Promise<P
   const room = await getRoom(roomId, null, now);
   return {
     roomId: room.roomId,
+    generation: room.generation,
     state: room.state,
     participantCount: room.participantCount,
     storage: room.storage,

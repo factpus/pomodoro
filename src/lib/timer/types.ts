@@ -56,6 +56,7 @@ export type HostTransferSnapshot =
 
 export interface RoomSnapshot {
   roomId: string;
+  generation: number;
   state: PublicTimerState;
   participantCount: number;
   role: 'host' | 'participant';
