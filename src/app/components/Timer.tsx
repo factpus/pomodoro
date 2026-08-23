@@ -152,7 +152,7 @@ export default function Timer({ roomId }: { roomId: string }) {
     <main className={`room-shell phase-${phase}`}>
       <nav className="room-nav"><Link href="/" className="brand">Pomodoro Together</Link><div className="flex items-center gap-2"><span className={`status ${connection}`}>{connection === 'connected' ? '同期中' : connection === 'connecting' ? '接続中' : '再接続中'}</span>{snapshot?.role === 'host' && currentClientId ? <HostTransferBadge roomId={roomId} clientId={currentClientId} snapshot={snapshot} token={hostToken} onUpdate={acceptSnapshot} /> : <span className="badge">参加者</span>}</div></nav>
       <section className="timer-card" aria-live="polite">
-        <DiscordActivityPanel />
+        {snapshot && <DiscordActivityPanel state={snapshot.state} />}
         {snapshot && currentClientId && <HostTransferOffer roomId={roomId} clientId={currentClientId} snapshot={snapshot} onUpdate={acceptSnapshot} onToken={receiveHostToken} />}
         <div className="timer-head"><div><p className="eyebrow">{phaseLabels[phase]}</p><h1>{roomId}</h1></div><VolumeControl volume={volume} setVolume={setVolume} isMuted={isMuted} setIsMuted={setIsMuted} onInteraction={interact} /></div>
         <div className="time" role="timer" aria-label={`残り${Math.floor(remaining / 60)}分${remaining % 60}秒`}>{minutes}<span>:</span>{seconds}</div>

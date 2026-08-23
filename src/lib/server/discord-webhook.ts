@@ -2,11 +2,16 @@ import 'server-only';
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type { RoomRecord } from '@/lib/timer/types';
+import { discordRequestSignal, waitForDiscordRateLimit } from './discord-rate-limit';
 
 type EncryptedSecret = NonNullable<RoomRecord['discordWebhook']>;
 
 export class IntegrationConfigurationError extends Error {}
-export class DiscordWebhookError extends Error {}
+export class DiscordWebhookError extends Error {
+  constructor(message: string, public readonly status?: number, public readonly permanent = false) {
+    super(message);
+  }
+}
 
 function encryptionKey() {
   const configured = process.env.INTEGRATION_ENCRYPTION_KEY?.trim();
@@ -61,22 +66,29 @@ function decryptWebhookUrl(secret: EncryptedSecret) {
 }
 
 export async function postDiscordWebhook(secret: EncryptedSecret, content: string) {
-  let response: Response;
-  try {
-    response = await fetch(`${decryptWebhookUrl(secret)}?wait=true`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        content,
-        username: 'Pomodoro Together',
-        allowed_mentions: { parse: [] },
-      }),
-      signal: AbortSignal.timeout(5_000),
-    });
-  } catch {
-    throw new DiscordWebhookError('Discordへ接続できませんでした。URLと接続状態を確認してください。');
-  }
-  if (!response.ok) {
-    throw new DiscordWebhookError(`Discordへの送信に失敗しました（${response.status}）。`);
+  const url = `${decryptWebhookUrl(secret)}?wait=true`;
+  const deadline = Date.now() + 10_000;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content,
+          username: 'Pomodoro Together',
+          allowed_mentions: { parse: [] },
+        }),
+        signal: discordRequestSignal(deadline),
+      });
+    } catch {
+      throw new DiscordWebhookError('Discordへ接続できませんでした。URLと接続状態を確認してください。');
+    }
+    if (response.ok) return;
+    if (response.status === 429 && attempt === 0 && await waitForDiscordRateLimit(response, deadline)) {
+      continue;
+    }
+    const permanent = response.status === 401 || response.status === 404;
+    throw new DiscordWebhookError(`Discordへの送信に失敗しました（${response.status}）。`, response.status, permanent);
   }
 }

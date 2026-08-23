@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createPublicKey, verify } from 'node:crypto';
+import { discordRequestSignal, waitForDiscordRateLimit } from './discord-rate-limit';
 
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 
@@ -23,10 +24,30 @@ export function verifyDiscordRequest(body: string, signature: string | null, tim
 export interface DiscordInteraction {
   id: string;
   type: number;
+  application_id?: string;
+  token?: string;
   data?: {
     name?: string;
     options?: Array<{ name: string; value?: string | number | boolean }>;
   };
+}
+
+export async function postDiscordRoomInvite(applicationId: string, interactionToken: string, roomId: string, inviteUrl: string) {
+  const url = `https://discord.com/api/v10/webhooks/${encodeURIComponent(applicationId)}/${encodeURIComponent(interactionToken)}`;
+  const body = JSON.stringify({
+    content: `🍅 **Pomodoro Together**\nルーム **${roomId}** で一緒に集中しよう。`,
+    allowed_mentions: { parse: [] },
+    components: [{ type: 1, components: [{ type: 2, style: 5, label: 'ルームに参加', url: inviteUrl }] }],
+  });
+  const deadline = Date.now() + 8_000;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: discordRequestSignal(deadline) });
+    if (response.ok) return;
+    if (response.status === 429 && attempt === 0 && await waitForDiscordRateLimit(response, deadline)) {
+      continue;
+    }
+    throw new Error(`Discord invite followup failed (${response.status})`);
+  }
 }
 
 export function integerOption(interaction: DiscordInteraction, name: string, fallback: number) {

@@ -6,7 +6,8 @@ import { advanceTimer, applyTimerCommand, createTimerState, toPublicTimerState }
 import type { PublicRoomSnapshot, RoomRecord, RoomSnapshot, TimerCommand, TimerSettings } from '@/lib/timer/types';
 import { redisClient, storageMode } from './redis';
 import { createHostToken, hashToken, tokenMatches } from './security';
-import { encryptWebhookUrl, postDiscordWebhook, validateDiscordWebhookUrl } from './discord-webhook';
+import { DiscordWebhookError, encryptWebhookUrl, postDiscordWebhook, validateDiscordWebhookUrl } from './discord-webhook';
+import { logServerEvent } from './observability';
 
 const ROOM_TTL_SECONDS = 24 * 60 * 60;
 const PARTICIPANT_TTL_MS = 15_000;
@@ -105,7 +106,39 @@ async function notifyDiscord(room: RoomRecord, content: string) {
   try {
     await postDiscordWebhook(room.discordWebhook, content);
   } catch (error) {
-    console.warn('Discord Webhook notification failed:', error instanceof Error ? error.message : 'unknown error');
+    logServerEvent('warn', 'discord.webhook_failed', {
+      room: hashToken(room.roomId).slice(0, 12),
+      status: error instanceof DiscordWebhookError ? error.status : undefined,
+      permanent: error instanceof DiscordWebhookError ? error.permanent : false,
+    });
+    if (error instanceof DiscordWebhookError && error.permanent) {
+      await removeFailedDiscordWebhook(room).catch(() => undefined);
+    }
+  }
+}
+
+function sameWebhook(left: NonNullable<RoomRecord['discordWebhook']>, right: NonNullable<RoomRecord['discordWebhook']>) {
+  return left.ciphertext === right.ciphertext && left.iv === right.iv && left.tag === right.tag;
+}
+
+async function removeFailedDiscordWebhook(failedRoom: RoomRecord) {
+  if (!failedRoom.discordWebhook) return;
+  const redis = roomDatabase();
+  if (redis) {
+    await withRedisLock(redis, failedRoom.roomId, async () => {
+      const current = await readRedis(redis, failedRoom.roomId);
+      if (!current?.discordWebhook || !sameWebhook(current.discordWebhook, failedRoom.discordWebhook!)) return;
+      delete current.discordWebhook;
+      current.updatedAt = Date.now();
+      await writeRedis(redis, current);
+    });
+    return;
+  }
+  const current = memoryRooms.get(failedRoom.roomId);
+  if (current?.discordWebhook && sameWebhook(current.discordWebhook, failedRoom.discordWebhook)) {
+    delete current.discordWebhook;
+    current.updatedAt = Date.now();
+    memoryRooms.set(current.roomId, current);
   }
 }
 
@@ -163,6 +196,53 @@ export async function createRoom(
     memoryRooms.set(roomId, room);
   }
   return { snapshot: snapshot(room, hostToken, now, clientId), hostToken };
+}
+
+export async function joinDiscordActivityRoom(instanceId: string, clientId: string, recoveryToken: string, now = Date.now()) {
+  const roomId = `activity-${hashToken(instanceId).slice(0, 24)}`;
+  const redis = roomDatabase();
+
+  const joinOrCreate = (current: RoomRecord | null) => {
+    if (current) {
+      const room = pruneParticipants(current, now);
+      room.participants[clientId] = now;
+      room.state = advanceTimer(room.state, now);
+      room.updatedAt = now;
+      const hostToken = tokenMatches(recoveryToken, room.hostTokenHash) ? recoveryToken : null;
+      if (hostToken) room.hostClientId = clientId;
+      return { room, hostToken };
+    }
+    const hostToken = recoveryToken;
+    const room: RoomRecord = {
+      roomId,
+      hostTokenHash: hashToken(hostToken),
+      hostClientId: clientId,
+      state: createTimerState({ focusSeconds: 25 * 60, shortBreakSeconds: 5 * 60, longBreakSeconds: 15 * 60, longBreakEvery: 4 }, now),
+      participants: { [clientId]: now },
+      createdAt: now,
+      updatedAt: now,
+    };
+    return { room, hostToken };
+  };
+
+  if (redis) {
+    const result = await withRedisLock(redis, roomId, async () => {
+      const result = joinOrCreate(await readRedis(redis, roomId));
+      await writeRedis(redis, result.room);
+      return result;
+    });
+    return {
+      snapshot: snapshot(result.room, result.hostToken, now, clientId),
+      hostToken: result.hostToken,
+    };
+  }
+
+  const result = joinOrCreate(memoryRooms.get(roomId) ?? null);
+  memoryRooms.set(roomId, result.room);
+  return {
+    snapshot: snapshot(result.room, result.hostToken, now, clientId),
+    hostToken: result.hostToken,
+  };
 }
 
 export async function getRoom(

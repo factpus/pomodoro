@@ -13,6 +13,7 @@
 - 切断後の自動再接続と状態復元
 - 参加人数、Discord・LINE共有、ルーム別OGP、プリセット、長休憩、ブラウザ通知
 - 任意のDiscord Webhook通知、`/pomodoro`コマンド、Discord Activity
+- Activityインスタンスごとの自動ルーム参加と最小Rich Presence
 - レスポンシブUI、キーボード操作、PWA、OG画像
 
 ## 技術構成
@@ -47,6 +48,8 @@ UPSTASH_REDIS_REST_TOKEN
 `KV_REST_API_URL` / `KV_REST_API_TOKEN` も後方互換として利用できます。
 
 Discord連携は任意です。暗号鍵、Interaction、Activityの設定は [Discord連携セットアップ](docs/DISCORD_SETUP.md) を参照してください。
+
+本番監視、構造化ログ、障害時の確認順は [運用・監視](docs/OPERATIONS.md) を参照してください。死活監視には `GET /api/health` を使用します。
 
 ## 検証
 
