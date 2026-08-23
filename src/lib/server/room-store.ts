@@ -86,6 +86,8 @@ function snapshot(room: RoomRecord, token: string | null, now: number, clientId?
     : undefined;
   return {
     roomId: room.roomId,
+    generation: room.createdAt,
+    revision: room.revision ?? 0,
     state: toPublicTimerState(room.state, now),
     participantCount: Object.keys(room.participants).length,
     role,
@@ -138,7 +140,7 @@ async function removeFailedDiscordWebhook(failedRoom: RoomRecord) {
   if (current?.discordWebhook && sameWebhook(current.discordWebhook, failedRoom.discordWebhook)) {
     delete current.discordWebhook;
     current.updatedAt = Date.now();
-    memoryRooms.set(current.roomId, current);
+    writeMemory(current);
   }
 }
 
@@ -147,7 +149,13 @@ async function readRedis(redis: Redis, roomId: string): Promise<RoomRecord | nul
 }
 
 async function writeRedis(redis: Redis, room: RoomRecord): Promise<void> {
+  room.revision = (room.revision ?? 0) + 1;
   await redis.set(roomKey(room.roomId), room, { ex: ROOM_TTL_SECONDS });
+}
+
+function writeMemory(room: RoomRecord) {
+  room.revision = (room.revision ?? 0) + 1;
+  memoryRooms.set(room.roomId, room);
 }
 
 async function withRedisLock<T>(redis: Redis, roomId: string, action: () => Promise<T>): Promise<T> {
@@ -180,6 +188,7 @@ export async function createRoom(
   const hostToken = createHostToken();
   const room: RoomRecord = {
     roomId,
+    revision: 1,
     hostTokenHash: hashToken(hostToken),
     hostClientId: clientId,
     state: createTimerState(settings, now),
@@ -215,6 +224,7 @@ export async function joinDiscordActivityRoom(instanceId: string, clientId: stri
     const hostToken = recoveryToken;
     const room: RoomRecord = {
       roomId,
+      revision: 0,
       hostTokenHash: hashToken(hostToken),
       hostClientId: clientId,
       state: createTimerState({ focusSeconds: 25 * 60, shortBreakSeconds: 5 * 60, longBreakSeconds: 15 * 60, longBreakEvery: 4 }, now),
@@ -238,7 +248,7 @@ export async function joinDiscordActivityRoom(instanceId: string, clientId: stri
   }
 
   const result = joinOrCreate(memoryRooms.get(roomId) ?? null);
-  memoryRooms.set(roomId, result.room);
+  writeMemory(result.room);
   return {
     snapshot: snapshot(result.room, result.hostToken, now, clientId),
     hostToken: result.hostToken,
@@ -260,7 +270,7 @@ export async function getRoom(
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
   const room = pruneParticipants({ ...current, state: advanceTimer(current.state, now) }, now);
-  memoryRooms.set(roomId, room);
+  writeMemory(room);
   return snapshot(room, token, now);
 }
 
@@ -268,6 +278,8 @@ export async function getPublicRoom(roomId: string, now = Date.now()): Promise<P
   const room = await getRoom(roomId, null, now);
   return {
     roomId: room.roomId,
+    generation: room.generation,
+    revision: room.revision,
     state: room.state,
     participantCount: room.participantCount,
     storage: room.storage,
@@ -308,7 +320,7 @@ export async function heartbeat(
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
   const previousPhase = current.state.phase;
   const room = update(current);
-  memoryRooms.set(roomId, room);
+  writeMemory(room);
   if (previousPhase !== room.state.phase) {
     await notifyDiscord(room, `🍅 **${phaseNames[room.state.phase]}を開始しました**\nルーム: ${roomId}`);
   }
@@ -347,7 +359,7 @@ export async function commandRoom(
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
   const room = update(current);
-  memoryRooms.set(roomId, room);
+  writeMemory(room);
   await notifyCommand(room, command);
   return snapshot(room, token, now, clientId);
 }
@@ -389,7 +401,7 @@ export async function connectDiscordWebhook(roomId: string, token: string | null
   if (!tokenMatches(token, room.hostTokenHash)) throw new RoomForbiddenError('Discord通知を設定できるのはホストだけです。');
   room.discordWebhook = secret;
   room.updatedAt = now;
-  memoryRooms.set(roomId, room);
+  writeMemory(room);
   return snapshot(room, token, now);
 }
 
@@ -413,7 +425,7 @@ export async function disconnectDiscordWebhook(roomId: string, token: string | n
   if (!tokenMatches(token, room.hostTokenHash)) throw new RoomForbiddenError('Discord通知を解除できるのはホストだけです。');
   delete room.discordWebhook;
   room.updatedAt = now;
-  memoryRooms.set(roomId, room);
+  writeMemory(room);
   return snapshot(room, token, now);
 }
 
@@ -461,7 +473,7 @@ export async function requestHostTransfer(
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
   const room = update(current);
-  memoryRooms.set(roomId, room);
+  writeMemory(room);
   return snapshot(room, token, now, clientId);
 }
 
@@ -498,7 +510,7 @@ export async function cancelHostTransfer(
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
   const room = update(current);
-  memoryRooms.set(roomId, room);
+  writeMemory(room);
   return snapshot(room, token, now, clientId);
 }
 
@@ -533,6 +545,6 @@ export async function acceptHostTransfer(roomId: string, clientId: string, now =
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
   const result = update(current);
-  memoryRooms.set(roomId, result.room);
+  writeMemory(result.room);
   return { snapshot: snapshot(result.room, result.hostToken, now, clientId), hostToken: result.hostToken };
 }

@@ -8,7 +8,7 @@ interface Props {
   roomId: string;
   token: string | null;
   connected: boolean;
-  onUpdate: (snapshot: RoomSnapshot) => void;
+  onUpdate: (snapshot: RoomSnapshot, requestToken?: string | null) => void;
 }
 
 export default function DiscordWebhookSettings({ roomId, token, connected, onUpdate }: Props) {
@@ -22,7 +22,7 @@ export default function DiscordWebhookSettings({ roomId, token, connected, onUpd
     setMessage('');
     try {
       const snapshot = await connectDiscordWebhook(roomId, url, token);
-      onUpdate(snapshot);
+      onUpdate(snapshot, token);
       setUrl('');
       setMessage('テスト通知を送信し、接続しました。');
     } catch (error) {
@@ -36,7 +36,7 @@ export default function DiscordWebhookSettings({ roomId, token, connected, onUpd
     setBusy(true);
     setMessage('');
     try {
-      onUpdate(await disconnectDiscordWebhook(roomId, token));
+      onUpdate(await disconnectDiscordWebhook(roomId, token), token);
       setMessage('Discord通知を解除しました。');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '解除できませんでした。');

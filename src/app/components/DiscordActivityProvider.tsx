@@ -21,6 +21,15 @@ interface ActivityContextValue {
   setTimerPresence: (input: PresenceInput) => Promise<void>;
 }
 
+type ConnectionStage = 'sdk-ready' | 'authorize' | 'token-exchange' | 'authenticate';
+
+const connectionStageLabels: Record<ConnectionStage, string> = {
+  'sdk-ready': 'SDK初期化',
+  authorize: 'Discord認可',
+  'token-exchange': 'OAuthトークン交換',
+  authenticate: 'Discord認証',
+};
+
 const ActivityContext = createContext<ActivityContextValue>({
   embedded: false,
   authenticated: false,
@@ -59,19 +68,17 @@ export default function DiscordActivityProvider({ children }: { children: React.
     let cancelled = false;
     let cleanup: (() => Promise<unknown>) | undefined;
 
-    void import('@discord/embedded-app-sdk').then(async ({ DiscordSDK, Events }) => {
+    void (async () => {
+      let stage: ConnectionStage = 'sdk-ready';
       try {
+        const { DiscordSDK, Events } = await import('@discord/embedded-app-sdk');
         const sdk = new DiscordSDK(applicationId, { disableConsoleLogOverride: true });
         sdkRef.current = sdk;
         await sdk.ready();
         if (cancelled) return;
         setEmbedded(true);
 
-        const updateParticipants = (data: { participants: unknown[] }) => setParticipants(data.participants.length);
-        updateParticipants(await sdk.commands.getInstanceConnectedParticipants());
-        await sdk.subscribe(Events.ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE, updateParticipants);
-        cleanup = () => sdk.unsubscribe(Events.ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE, updateParticipants);
-
+        stage = 'authorize';
         const { code } = await sdk.commands.authorize({
           client_id: applicationId,
           response_type: 'code',
@@ -79,20 +86,40 @@ export default function DiscordActivityProvider({ children }: { children: React.
           prompt: 'none',
           scope: ['identify', 'rpc.activities.write'],
         });
+        stage = 'token-exchange';
         const token = await responseJson<{ accessToken: string }>(await fetch('/api/discord/oauth/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code }),
         }));
+        stage = 'authenticate';
         const authentication = await sdk.commands.authenticate({ access_token: token.accessToken });
         if (!authentication) throw new Error('Discordユーザーを認証できませんでした。');
         if (cancelled) return;
         accessTokenRef.current = token.accessToken;
         setAuthenticated(true);
+
+        const updateParticipants = (data: { participants: unknown[] }) => {
+          if (!cancelled) setParticipants(data.participants.length);
+        };
+        try {
+          updateParticipants(await sdk.commands.getInstanceConnectedParticipants());
+          if (cancelled) return;
+          await sdk.subscribe(Events.ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE, updateParticipants);
+          if (cancelled) await sdk.unsubscribe(Events.ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE, updateParticipants);
+          else cleanup = () => sdk.unsubscribe(Events.ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE, updateParticipants);
+        } catch (caught) {
+          console.warn('[Discord Activity] participant tracking failed', caught);
+        }
       } catch (caught) {
-        if (!cancelled) setError(caught instanceof Error ? caught.message : 'Discordとの接続に失敗しました。');
+        console.error(`[Discord Activity] connection failed at ${stage}`, caught);
+        if (!cancelled) {
+          const detail = caught instanceof Error ? `: ${caught.message}` : '';
+          setEmbedded(true);
+          setError(`Discordとの接続に失敗しました（${connectionStageLabels[stage]}）${detail}`);
+        }
       }
-    });
+    })();
 
     return () => {
       cancelled = true;

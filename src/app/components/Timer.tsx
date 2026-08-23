@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { prepareAudioOnce } from '@/lib/client/audio';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
 import { fetchPublicRoom, sendCommand, sendHeartbeat } from '@/lib/client/rooms';
+import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldApplyRequestFailure, shouldRevokeHostToken, snapshotAcceptance, type SnapshotWatermark } from '@/lib/client/snapshot-order';
 import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand, TimerPhase } from '@/lib/timer/types';
 import ShareActions from './ShareActions';
 import DiscordWebhookSettings from './DiscordWebhookSettings';
@@ -26,30 +28,64 @@ export default function Timer({ roomId }: { roomId: string }) {
   const tokenRef = useRef<string | null>(null);
   const clientRef = useRef('');
   const serverOffsetRef = useRef(0);
+  const latestTimerSnapshotRef = useRef<SnapshotWatermark | null>(null);
+  const latestAuthenticatedSnapshotRef = useRef<SnapshotWatermark | null>(null);
+  const acceptedResponseRef = useRef(0);
   const previousPhaseRef = useRef<TimerPhase | null>(null);
   const focusAudioRef = useRef<HTMLAudioElement>(null);
   const breakAudioRef = useRef<HTMLAudioElement>(null);
   const interactedRef = useRef(false);
 
-  const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot) => {
+  const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot, requestToken?: string | null) => {
+    const previousGeneration = latestTimerSnapshotRef.current?.generation ?? null;
+    const generationChanged = previousGeneration !== null && next.generation > previousGeneration;
+    if (generationChanged) {
+      latestAuthenticatedSnapshotRef.current = null;
+      previousPhaseRef.current = null;
+    }
+    const watermark = {
+      generation: next.generation,
+      revision: next.revision,
+      version: next.state.version,
+      serverNow: next.state.serverNow,
+    };
+    const authenticated = 'role' in next;
+    const orderedAcceptance = snapshotAcceptance(
+      latestTimerSnapshotRef.current,
+      latestAuthenticatedSnapshotRef.current,
+      watermark,
+      authenticated,
+    );
+    const acceptance = {
+      ...orderedAcceptance,
+      metadata: orderedAcceptance.metadata && isCredentialContextCurrent(tokenRef.current, requestToken),
+    };
+    if (acceptance.timer) latestTimerSnapshotRef.current = watermark;
+    if (acceptance.metadata) latestAuthenticatedSnapshotRef.current = watermark;
+    if (acceptance.timer || acceptance.metadata) acceptedResponseRef.current += 1;
     const receivedAt = Date.now();
-    if ('role' in next && next.role === 'participant' && tokenRef.current) {
+    if (authenticated && acceptance.metadata && shouldRevokeHostToken(tokenRef.current, requestToken, next.role)) {
       sessionStorage.removeItem(hostTokenKey(roomId));
       tokenRef.current = null;
       setHostToken(null);
     }
-    serverOffsetRef.current = next.state.serverNow - receivedAt;
-    setSnapshot((current) => 'role' in next
-      ? next
-      : {
-          ...next,
-          role: current?.role ?? 'participant',
-          participants: current?.participants,
-          hostTransfer: current?.hostTransfer,
-        });
-    setRemaining(next.state.remainingSeconds);
+    if (authenticated && (acceptance.timer || acceptance.metadata)) {
+      setSnapshot((current) => mergeAuthenticatedSnapshot(current, next, acceptance));
+    } else if (!authenticated && acceptance.timer) {
+      setSnapshot((current) => current && current.generation === next.generation
+        ? {
+            ...next,
+            role: current.role,
+            participants: current.participants,
+            hostTransfer: current.hostTransfer,
+          }
+        : { ...next, role: 'participant' });
+    }
     setConnection('connected');
     setError('');
+    if (!acceptance.timer) return;
+    serverOffsetRef.current = next.state.serverNow - receivedAt;
+    setRemaining(next.state.remainingSeconds);
     if (previousPhaseRef.current && previousPhaseRef.current !== next.state.phase) {
       const title = next.state.phase === 'focus' ? '集中を始めよう' : '休憩の時間です';
       if (Notification.permission === 'granted') new Notification(title, { body: `ルーム「${roomId}」のタイマーが切り替わりました。` });
@@ -58,6 +94,9 @@ export default function Timer({ roomId }: { roomId: string }) {
   }, [roomId]);
 
   useEffect(() => {
+    latestTimerSnapshotRef.current = null;
+    latestAuthenticatedSnapshotRef.current = null;
+    acceptedResponseRef.current = 0;
     const notificationTimer = window.setTimeout(() => {
       setNotificationPermission('Notification' in window ? Notification.permission : 'unsupported');
     }, 0);
@@ -76,19 +115,33 @@ export default function Timer({ roomId }: { roomId: string }) {
 
     const sync = async () => {
       if (document.hidden) return;
+      const acceptedAtStart = acceptedResponseRef.current;
       try {
         acceptSnapshot(await fetchPublicRoom(roomId, controller.signal)); failures = 0;
       } catch (caught) {
         if (controller.signal.aborted) return;
+        if (!shouldApplyRequestFailure(acceptedAtStart, acceptedResponseRef.current)) return;
         failures += 1;
         const message = caught instanceof Error ? caught.message : '同期できませんでした。';
-        if (message.includes('見つかりません')) setConnection('missing'); else setConnection('reconnecting');
+        if (message.includes('見つかりません')) {
+          latestTimerSnapshotRef.current = null;
+          latestAuthenticatedSnapshotRef.current = null;
+          previousPhaseRef.current = null;
+          setSnapshot(null);
+          setConnection('missing');
+        } else setConnection('reconnecting');
         setError(message);
       }
     };
     const beat = async () => {
-      try { acceptSnapshot(await sendHeartbeat(roomId, clientRef.current, tokenRef.current)); failures = 0; }
-      catch { failures += 1; if (failures > 1) setConnection('reconnecting'); }
+      const acceptedAtStart = acceptedResponseRef.current;
+      const requestToken = tokenRef.current;
+      try { acceptSnapshot(await sendHeartbeat(roomId, clientRef.current, requestToken), requestToken); failures = 0; }
+      catch {
+        if (!shouldApplyRequestFailure(acceptedAtStart, acceptedResponseRef.current)) return;
+        failures += 1;
+        if (failures > 1) setConnection('reconnecting');
+      }
     };
     void beat();
     const syncTimer = window.setInterval(sync, 2_000);
@@ -123,7 +176,8 @@ export default function Timer({ roomId }: { roomId: string }) {
   async function command(value: TimerCommand) {
     if (!snapshot || snapshot.role !== 'host' || connection !== 'connected') return;
     setError('');
-    try { acceptSnapshot(await sendCommand(roomId, value, clientRef.current, tokenRef.current)); }
+    const requestToken = tokenRef.current;
+    try { acceptSnapshot(await sendCommand(roomId, value, clientRef.current, requestToken), requestToken); }
     catch (caught) { setError(caught instanceof Error ? caught.message : '操作に失敗しました。'); }
   }
 
@@ -137,7 +191,9 @@ export default function Timer({ roomId }: { roomId: string }) {
     setHostToken(token);
   }
 
-  const interact = () => { interactedRef.current = true; focusAudioRef.current?.load(); breakAudioRef.current?.load(); };
+  const interact = () => {
+    interactedRef.current = prepareAudioOnce(interactedRef.current, [focusAudioRef.current, breakAudioRef.current]);
+  };
   const role = snapshot?.role;
   const running = snapshot?.state.isRunning ?? false;
   const phase = snapshot?.state.phase ?? 'focus';
