@@ -15,7 +15,10 @@
 - [ ] `/api/health` を5分間隔で監視
 - [ ] 2回連続失敗時の通知先と通知テスト
 - [ ] Upstashの日次コマンド数・保存容量70%のアラート
-- [ ] Vercel Functionsの5分間エラー率5%のアラート
+- [x] VercelのWeb通知・メール通知とDeployment Failures通知を有効化
+- [ ] VercelのError Anomaly・Usage Anomaly AlertsはHobbyプランでは利用できないため、Proへ移行する場合に再検討
+
+HobbyプランではVercelの異常検知Alertsに依存せず、外部HTTP監視から `/api/health` の200/503を確認する。Vercel標準通知はデプロイ失敗の検知に使用し、実行中サービスとRedisの死活監視とは役割を分ける。
 
 ## 構造化ログ
 
