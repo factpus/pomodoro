@@ -99,6 +99,24 @@ test('API rejects invalid room settings', async ({ request }) => {
   expect(response.status()).toBe(400);
 });
 
+test('participant controls wait for a successful membership heartbeat', async ({ page, request }) => {
+  const roomId = `membership-${Date.now()}`;
+  const created = await request.post('/api/rooms', {
+    headers: { 'X-Client-Id': crypto.randomUUID() },
+    data: {
+      roomId,
+      settings: { focusMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 },
+    },
+  });
+  expect(created.status()).toBe(201);
+  await page.route(`**/api/rooms/${roomId}/heartbeat`, (route) => route.abort());
+
+  await page.goto(`/room/${roomId}`);
+  await expect(page.getByText('同期中', { exact: true })).toBeVisible();
+  await expect(page.getByText('参加状態を確認しています。接続が完了すると操作できます。')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'タイマーを開始' })).toBeDisabled();
+});
+
 test('health endpoint reports the local fallback without caching', async ({ request }) => {
   const response = await request.get('/api/health');
   expect(response.status()).toBe(200);
