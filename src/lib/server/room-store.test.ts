@@ -51,7 +51,23 @@ describe('shared room membership and host continuity', () => {
       .rejects.toBeInstanceOf(RoomForbiddenError);
   });
 
-  it('atomically hands the host token to the first participant that detects a disconnected host', async () => {
+  it('keeps the host token during a transient missed heartbeat', async () => {
+    const roomId = `grace-${randomUUID()}`;
+    const hostClientId = randomUUID();
+    const participantClientId = randomUUID();
+    const created = await createRoom(roomId, settings, hostClientId, 1_800_000_150_000);
+    await heartbeat(roomId, participantClientId, null, 1_800_000_151_000);
+
+    const prematureClaim = await heartbeat(roomId, participantClientId, null, 1_800_000_166_000);
+    expect(prematureClaim.hostToken).toBeNull();
+    expect(prematureClaim.snapshot.role).toBe('participant');
+
+    const recoveredHost = await heartbeat(roomId, hostClientId, created.hostToken, 1_800_000_170_000);
+    expect(recoveredHost.hostToken).toBeNull();
+    expect(recoveredHost.snapshot.role).toBe('host');
+  });
+
+  it('atomically hands the host token to the first participant that detects a disconnected host after the grace period', async () => {
     const roomId = `handoff-${randomUUID()}`;
     const hostClientId = randomUUID();
     const firstParticipantId = randomUUID();
@@ -60,16 +76,20 @@ describe('shared room membership and host continuity', () => {
     await heartbeat(roomId, firstParticipantId, null, 1_800_000_201_000);
     await heartbeat(roomId, secondParticipantId, null, 1_800_000_202_000);
 
+    const beforeGrace = await heartbeat(roomId, firstParticipantId, null, 1_800_000_216_000);
+    expect(beforeGrace.hostToken).toBeNull();
+    expect(beforeGrace.snapshot.role).toBe('participant');
+
     const [claimed, follower] = await Promise.all([
-      heartbeat(roomId, firstParticipantId, null, 1_800_000_216_000),
-      heartbeat(roomId, secondParticipantId, null, 1_800_000_216_000),
+      heartbeat(roomId, firstParticipantId, null, 1_800_000_231_000),
+      heartbeat(roomId, secondParticipantId, null, 1_800_000_231_000),
     ]);
     expect(claimed.hostToken).toBeTruthy();
     expect(claimed.snapshot.role).toBe('host');
     expect(follower.hostToken).toBeNull();
     expect(follower.snapshot.role).toBe('participant');
 
-    const formerHost = await heartbeat(roomId, hostClientId, created.hostToken, 1_800_000_216_002);
+    const formerHost = await heartbeat(roomId, hostClientId, created.hostToken, 1_800_000_231_002);
     expect(formerHost.hostToken).toBeNull();
     expect(formerHost.snapshot.role).toBe('participant');
   });

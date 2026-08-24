@@ -30,6 +30,7 @@ export interface RoomRecord {
   revision: number;
   hostTokenHash: string;
   hostClientId?: string;
+  hostLastSeenAt?: number;
   state: TimerState;
   participants: Record<string, number>;
   pendingHostTransfer?: {

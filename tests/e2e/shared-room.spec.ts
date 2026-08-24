@@ -67,7 +67,7 @@ test('two clients share state and every active participant can control the timer
 });
 
 test('a remaining participant automatically becomes host after the host disconnects', async ({ browser }) => {
-  test.setTimeout(45_000);
+  test.setTimeout(60_000);
   const host = await browser.newContext();
   const guest = await browser.newContext();
   const hostPage = await host.newPage();
@@ -83,7 +83,7 @@ test('a remaining participant automatically becomes host after the host disconne
   await expect(guestPage.getByText('参加者', { exact: true })).toBeVisible();
   await hostPage.close();
 
-  await expect(guestPage.getByRole('button', { name: 'ホスト' })).toBeVisible({ timeout: 30_000 });
+  await expect(guestPage.getByRole('button', { name: 'ホスト' })).toBeVisible({ timeout: 45_000 });
   const inheritedToken = await guestPage.evaluate((id) => sessionStorage.getItem(`pomodoro-together-host:${id}`), roomId);
   expect(inheritedToken).toBeTruthy();
 
