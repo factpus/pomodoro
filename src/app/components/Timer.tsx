@@ -53,7 +53,7 @@ export default function Timer({ roomId }: { roomId: string }) {
     writeAudioPreferences(browserAudioPreferenceStorage(), { volume, muted: isMuted });
   }, [audioPreferencesLoaded, isMuted, volume]);
 
-  const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot, requestToken?: string | null) => {
+  const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot, requestToken?: string | null, issuedHostToken?: string | null) => {
     const previousGeneration = latestTimerSnapshotRef.current?.generation ?? null;
     const generationChanged = previousGeneration !== null && next.generation > previousGeneration;
     if (generationChanged) {
@@ -81,6 +81,11 @@ export default function Timer({ roomId }: { roomId: string }) {
     if (acceptance.metadata) latestAuthenticatedSnapshotRef.current = watermark;
     if (acceptance.timer || acceptance.metadata) acceptedResponseRef.current += 1;
     const receivedAt = Date.now();
+    if (authenticated && acceptance.metadata && issuedHostToken) {
+      sessionStorage.setItem(hostTokenKey(roomId), issuedHostToken);
+      tokenRef.current = issuedHostToken;
+      setHostToken(issuedHostToken);
+    }
     if (authenticated && acceptance.metadata && shouldRevokeHostToken(tokenRef.current, requestToken, next.role)) {
       sessionStorage.removeItem(hostTokenKey(roomId));
       tokenRef.current = null;
@@ -153,7 +158,11 @@ export default function Timer({ roomId }: { roomId: string }) {
     const beat = async () => {
       const acceptedAtStart = acceptedResponseRef.current;
       const requestToken = tokenRef.current;
-      try { acceptSnapshot(await sendHeartbeat(roomId, clientRef.current, requestToken), requestToken); failures = 0; }
+      try {
+        const result = await sendHeartbeat(roomId, clientRef.current, requestToken);
+        acceptSnapshot(result.snapshot, result.hostToken ? undefined : requestToken, result.hostToken);
+        failures = 0;
+      }
       catch {
         if (!shouldApplyRequestFailure(acceptedAtStart, acceptedResponseRef.current)) return;
         failures += 1;
@@ -191,7 +200,7 @@ export default function Timer({ roomId }: { roomId: string }) {
   }, [isMuted, snapshot?.state.isRunning, snapshot?.state.phase, volume]);
 
   async function command(value: TimerCommand) {
-    if (!snapshot || snapshot.role !== 'host' || connection !== 'connected') return;
+    if (!snapshot || connection !== 'connected') return;
     setError('');
     const requestToken = tokenRef.current;
     try { acceptSnapshot(await sendCommand(roomId, value, clientRef.current, requestToken), requestToken); }
@@ -231,11 +240,11 @@ export default function Timer({ roomId }: { roomId: string }) {
         <div className="time" role="timer" aria-label={`残り${Math.floor(remaining / 60)}分${remaining % 60}秒`}>{minutes}<span>:</span>{seconds}</div>
         <p className="cycle">🍅 {snapshot?.state.completedPomodoros ?? 0} 完了 ・ 次の長休憩まで {snapshot ? snapshot.state.longBreakEvery - snapshot.state.cyclePosition : '–'} セット</p>
         <div className="controls">
-          <button className="icon-button" onClick={() => void command('reset')} disabled={role !== 'host' || connection !== 'connected'} aria-label="タイマーをリセット">↺</button>
-          <button className="play-button" onClick={() => { interact(); void command(running ? 'pause' : 'start'); }} disabled={role !== 'host' || connection !== 'connected'} aria-label={running ? 'タイマーを一時停止' : 'タイマーを開始'}>{running ? 'Ⅱ' : '▶'}</button>
-          <button className="icon-button" onClick={() => void command('skip')} disabled={role !== 'host' || connection !== 'connected'} aria-label="次のフェーズへ進む">↠</button>
+          <button className="icon-button" onClick={() => void command('reset')} disabled={!snapshot || connection !== 'connected'} aria-label="タイマーをリセット">↺</button>
+          <button className="play-button" onClick={() => { interact(); void command(running ? 'pause' : 'start'); }} disabled={!snapshot || connection !== 'connected'} aria-label={running ? 'タイマーを一時停止' : 'タイマーを開始'}>{running ? 'Ⅱ' : '▶'}</button>
+          <button className="icon-button" onClick={() => void command('skip')} disabled={!snapshot || connection !== 'connected'} aria-label="次のフェーズへ進む">↠</button>
         </div>
-        {role === 'participant' && <p className="hint">タイマー操作はホストだけが行えます。</p>}
+        {role === 'participant' && <p className="hint">タイマーは全員で操作できます。連携設定とホスト移譲はホスト専用です。</p>}
         {error && <p className="error" role="alert">{error}</p>}
         {snapshot && <ShareActions roomId={roomId} state={snapshot.state} />}
         {snapshot?.role === 'host' && snapshot.integrations.discordWebhookAvailable && <DiscordWebhookSettings roomId={roomId} token={hostToken} connected={snapshot.integrations.discordWebhookConnected} onUpdate={acceptSnapshot} />}

@@ -71,4 +71,9 @@ export interface RoomSnapshot {
   hostTransfer?: HostTransferSnapshot;
 }
 
+export interface HeartbeatResult {
+  snapshot: RoomSnapshot;
+  hostToken: string | null;
+}
+
 export type PublicRoomSnapshot = Omit<RoomSnapshot, 'role' | 'participants' | 'hostTransfer'>;

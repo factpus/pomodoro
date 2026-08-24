@@ -77,5 +77,5 @@ export function HostTransferOffer({ roomId, clientId, snapshot, onUpdate, onToke
     }
   }
 
-  return <div className="host-transfer-offer"><div><strong>ホストを引き継ぎますか？</strong><p>承認すると、あなたがタイマーを操作できます。</p></div><button type="button" className="button button-primary" disabled={busy} onClick={() => void accept()}>{busy ? '引き継ぎ中…' : '引き継ぐ'}</button>{message && <p className="error" role="alert">{message}</p>}</div>;
+  return <div className="host-transfer-offer"><div><strong>ホストを引き継ぎますか？</strong><p>承認すると、あなたが連携設定を管理できます。</p></div><button type="button" className="button button-primary" disabled={busy} onClick={() => void accept()}>{busy ? '引き継ぎ中…' : '引き継ぐ'}</button>{message && <p className="error" role="alert">{message}</p>}</div>;
 }

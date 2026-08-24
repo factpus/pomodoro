@@ -3,7 +3,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { Redis } from '@upstash/redis';
 import { advanceTimer, applyTimerCommand, createTimerState, toPublicTimerState } from '@/lib/timer/model';
-import type { PublicRoomSnapshot, RoomRecord, RoomSnapshot, TimerCommand, TimerSettings } from '@/lib/timer/types';
+import type { HeartbeatResult, PublicRoomSnapshot, RoomRecord, RoomSnapshot, TimerCommand, TimerSettings } from '@/lib/timer/types';
 import { redisClient, storageMode } from './redis';
 import { createHostToken, hashToken, tokenMatches } from './security';
 import { DiscordWebhookError, encryptWebhookUrl, postDiscordWebhook, validateDiscordWebhookUrl } from './discord-webhook';
@@ -292,39 +292,53 @@ export async function heartbeat(
   clientId: string,
   token: string | null,
   now = Date.now(),
-): Promise<RoomSnapshot> {
+): Promise<HeartbeatResult> {
   const redis = roomDatabase();
   const update = (current: RoomRecord) => {
     const room = pruneParticipants(current, now);
     room.participants[clientId] = now;
-    if (tokenMatches(token, room.hostTokenHash)) room.hostClientId = clientId;
+    let issuedHostToken: string | null = null;
+    if (tokenMatches(token, room.hostTokenHash)) {
+      room.hostClientId = clientId;
+    } else if (!room.hostClientId || !room.participants[room.hostClientId]) {
+      issuedHostToken = createHostToken();
+      room.hostTokenHash = hashToken(issuedHostToken);
+      room.hostClientId = clientId;
+      delete room.pendingHostTransfer;
+    }
     room.state = advanceTimer(room.state, now);
     room.updatedAt = now;
-    return room;
+    return { room, issuedHostToken };
   };
   if (redis) {
     const result = await withRedisLock(redis, roomId, async () => {
       const current = await readRedis(redis, roomId);
       if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
       const previousPhase = current.state.phase;
-      const room = update(current);
-      await writeRedis(redis, room);
-      return { room, phaseChanged: previousPhase !== room.state.phase };
+      const updateResult = update(current);
+      await writeRedis(redis, updateResult.room);
+      return { ...updateResult, phaseChanged: previousPhase !== updateResult.room.state.phase };
     });
     if (result.phaseChanged) {
       await notifyDiscord(result.room, `🍅 **${phaseNames[result.room.state.phase]}を開始しました**\nルーム: ${roomId}`);
     }
-    return snapshot(result.room, token, now, clientId);
+    return {
+      snapshot: snapshot(result.room, result.issuedHostToken ?? token, now, clientId),
+      hostToken: result.issuedHostToken,
+    };
   }
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
   const previousPhase = current.state.phase;
-  const room = update(current);
-  writeMemory(room);
-  if (previousPhase !== room.state.phase) {
-    await notifyDiscord(room, `🍅 **${phaseNames[room.state.phase]}を開始しました**\nルーム: ${roomId}`);
+  const result = update(current);
+  writeMemory(result.room);
+  if (previousPhase !== result.room.state.phase) {
+    await notifyDiscord(result.room, `🍅 **${phaseNames[result.room.state.phase]}を開始しました**\nルーム: ${roomId}`);
   }
-  return snapshot(room, token, now, clientId);
+  return {
+    snapshot: snapshot(result.room, result.issuedHostToken ?? token, now, clientId),
+    hostToken: result.issuedHostToken,
+  };
 }
 
 export async function commandRoom(
@@ -335,10 +349,10 @@ export async function commandRoom(
   now = Date.now(),
 ): Promise<RoomSnapshot> {
   const update = (current: RoomRecord) => {
-    if (!tokenMatches(token, current.hostTokenHash)) {
-      throw new RoomForbiddenError('タイマーを操作できるのはホストだけです。');
-    }
     const room = pruneParticipants(current, now);
+    if (!Object.hasOwn(room.participants, clientId)) {
+      throw new RoomForbiddenError('タイマーを操作できるのは接続中の参加者だけです。');
+    }
     room.participants[clientId] = now;
     room.state = applyTimerCommand(room.state, command, now);
     room.updatedAt = now;
