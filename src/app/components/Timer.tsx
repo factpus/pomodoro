@@ -6,7 +6,7 @@ import { prepareAudioOnce } from '@/lib/client/audio';
 import { browserAudioPreferenceStorage, DEFAULT_AMBIENT_MUTED, DEFAULT_AMBIENT_VOLUME, readAudioPreferences, writeAudioPreferences } from '@/lib/client/audio-preferences';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
 import { fetchPublicRoom, sendCommand, sendHeartbeat } from '@/lib/client/rooms';
-import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldApplyRequestFailure, shouldRevokeHostToken, snapshotAcceptance, type SnapshotWatermark } from '@/lib/client/snapshot-order';
+import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldApplyRequestFailure, shouldRevokeHostToken, shouldStoreIssuedHostToken, snapshotAcceptance, type SnapshotWatermark } from '@/lib/client/snapshot-order';
 import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand, TimerPhase } from '@/lib/timer/types';
 import ShareActions from './ShareActions';
 import DiscordWebhookSettings from './DiscordWebhookSettings';
@@ -73,15 +73,20 @@ export default function Timer({ roomId }: { roomId: string }) {
       watermark,
       authenticated,
     );
+    const credentialContextCurrent = isCredentialContextCurrent(tokenRef.current, requestToken);
+    // Preserve a newly issued credential even if this snapshot lost a revision race to a later heartbeat.
+    const issuedTokenStored = authenticated
+      && Boolean(issuedHostToken)
+      && shouldStoreIssuedHostToken(tokenRef.current, requestToken, previousGeneration, next.generation);
     const acceptance = {
       ...orderedAcceptance,
-      metadata: orderedAcceptance.metadata && isCredentialContextCurrent(tokenRef.current, requestToken),
+      metadata: orderedAcceptance.metadata && credentialContextCurrent,
     };
     if (acceptance.timer) latestTimerSnapshotRef.current = watermark;
     if (acceptance.metadata) latestAuthenticatedSnapshotRef.current = watermark;
     if (acceptance.timer || acceptance.metadata) acceptedResponseRef.current += 1;
     const receivedAt = Date.now();
-    if (authenticated && acceptance.metadata && issuedHostToken) {
+    if (issuedTokenStored && issuedHostToken) {
       sessionStorage.setItem(hostTokenKey(roomId), issuedHostToken);
       tokenRef.current = issuedHostToken;
       setHostToken(issuedHostToken);
@@ -105,7 +110,7 @@ export default function Timer({ roomId }: { roomId: string }) {
     }
     setConnection('connected');
     setError('');
-    if (!acceptance.timer) return;
+    if (!acceptance.timer) return issuedTokenStored;
     serverOffsetRef.current = next.state.serverNow - receivedAt;
     setRemaining(next.state.remainingSeconds);
     if (previousPhaseRef.current && previousPhaseRef.current !== next.state.phase) {
@@ -113,6 +118,7 @@ export default function Timer({ roomId }: { roomId: string }) {
       if (Notification.permission === 'granted') new Notification(title, { body: `ルーム「${roomId}」のタイマーが切り替わりました。` });
     }
     previousPhaseRef.current = next.state.phase;
+    return issuedTokenStored;
   }, [roomId]);
 
   useEffect(() => {
@@ -160,7 +166,11 @@ export default function Timer({ roomId }: { roomId: string }) {
       const requestToken = tokenRef.current;
       try {
         const result = await sendHeartbeat(roomId, clientRef.current, requestToken);
-        acceptSnapshot(result.snapshot, result.hostToken ? undefined : requestToken, result.hostToken);
+        const issuedTokenStored = acceptSnapshot(result.snapshot, requestToken, result.hostToken);
+        if (issuedTokenStored && result.hostToken) {
+          const confirmation = await sendHeartbeat(roomId, clientRef.current, result.hostToken);
+          acceptSnapshot(confirmation.snapshot, result.hostToken, confirmation.hostToken);
+        }
         failures = 0;
       }
       catch {
