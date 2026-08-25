@@ -11,12 +11,14 @@ import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand, TimerPhase } from 
 import ShareActions from './ShareActions';
 import DiscordWebhookSettings from './DiscordWebhookSettings';
 import DiscordActivityPanel from './DiscordActivityPanel';
+import { useDiscordActivity } from './DiscordActivityProvider';
 import { HostTransferBadge, HostTransferOffer } from './HostTransfer';
 import VolumeControl from './VolumeControl';
 
 const phaseLabels: Record<TimerPhase, string> = { focus: '集中', shortBreak: '小休憩', longBreak: '長休憩' };
 
 export default function Timer({ roomId }: { roomId: string }) {
+  const { embedded } = useDiscordActivity();
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [connection, setConnection] = useState<'connecting' | 'connected' | 'reconnecting' | 'missing'>('connecting');
@@ -245,11 +247,11 @@ export default function Timer({ roomId }: { roomId: string }) {
   const seconds = (remaining % 60).toString().padStart(2, '0');
 
   if (connection === 'missing') {
-    return <main className="room-shell"><section className="panel empty"><p className="eyebrow">ルームが見つかりません</p><h1>{roomId}</h1><p className="lead">期限切れか、まだ作成されていないルームだよ。</p><Link className="button button-primary" href="/">新しいルームを作る</Link></section></main>;
+    return <main className={`room-shell${embedded ? ' discord-activity-layout' : ''}`}><section className="panel empty"><p className="eyebrow">ルームが見つかりません</p><h1>{roomId}</h1><p className="lead">期限切れか、まだ作成されていないルームだよ。</p><Link className="button button-primary" href="/">新しいルームを作る</Link></section></main>;
   }
 
   return (
-    <main className={`room-shell phase-${phase}`}>
+    <main className={`room-shell phase-${phase}${embedded ? ' discord-activity-layout' : ''}`}>
       <nav className="room-nav"><Link href="/" className="brand">Pomodoro Together</Link><div className="flex items-center gap-2"><span className={`status ${connection}`}>{connection === 'connected' ? '同期中' : connection === 'connecting' ? '接続中' : '再接続中'}</span>{snapshot?.role === 'host' && currentClientId ? <HostTransferBadge roomId={roomId} clientId={currentClientId} snapshot={snapshot} token={hostToken} onUpdate={acceptSnapshot} /> : <span className="badge">参加者</span>}</div></nav>
       <section className="timer-card" aria-live="polite">
         {snapshot && <DiscordActivityPanel roomId={roomId} state={snapshot.state} />}
@@ -265,7 +267,7 @@ export default function Timer({ roomId }: { roomId: string }) {
         {snapshot && !membershipReady && <p className="hint">参加状態を確認しています。接続が完了すると操作できます。</p>}
         {role === 'participant' && membershipReady && <p className="hint">タイマーは全員で操作できます。連携設定とホスト移譲はホスト専用です。</p>}
         {error && <p className="error" role="alert">{error}</p>}
-        {snapshot && <ShareActions roomId={roomId} state={snapshot.state} />}
+        {snapshot && <ShareActions roomId={roomId} state={snapshot.state} compact={embedded} />}
         {snapshot?.role === 'host' && snapshot.integrations.discordWebhookAvailable && <DiscordWebhookSettings roomId={roomId} token={hostToken} connected={snapshot.integrations.discordWebhookConnected} onUpdate={acceptSnapshot} />}
         <div className="room-actions">
           <span>👥 {snapshot?.participantCount ?? 0}人</span>

@@ -91,6 +91,31 @@ test('a remaining participant automatically becomes host after the host disconne
   await guest.close();
 });
 
+test('Discord Activity uses a compact layout without horizontal overflow', async ({ page }) => {
+  const roomId = `activity-layout-${Date.now()}`;
+
+  await page.goto('/');
+  await page.getByRole('textbox', { name: 'ルーム名', exact: true }).fill(roomId);
+  await page.getByRole('button', { name: 'ルームを作る' }).click();
+  await expect(page).toHaveURL(new RegExp(`/room/${roomId}$`));
+
+  for (const viewport of [{ width: 480, height: 640 }, { width: 960, height: 540 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`/room/${roomId}?frame_id=test-frame&instance_id=test-instance&platform=desktop`);
+
+    const shell = page.locator('main.room-shell');
+    await expect(shell).toHaveClass(/discord-activity-layout/);
+    await expect(page.getByRole('button', { name: 'タイマーを開始' })).toBeVisible();
+    await expect(page.getByText('リンクで招待', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'LINE', exact: true })).toBeHidden();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    const controls = await page.getByRole('button', { name: 'タイマーを開始' }).boundingBox();
+    expect(controls).not.toBeNull();
+    expect(controls!.y + controls!.height).toBeLessThanOrEqual(viewport.height);
+  }
+});
+
 test('API rejects invalid room settings', async ({ request }) => {
   const response = await request.post('/api/rooms', {
     headers: { 'X-Client-Id': crypto.randomUUID() },

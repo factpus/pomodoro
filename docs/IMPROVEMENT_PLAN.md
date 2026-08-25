@@ -54,7 +54,8 @@ Vercelの500エラー自体はFramework Presetが `Other` だったことが直�
 - [x] Discord Developer Portal、Activity URL Mapping、OAuth Redirect、Vercel環境変数、Entry Pointを設定
 - [x] Discordデスクトップ版でActivityの起動、認証、タイマー操作を確認
 - [x] Discord Activityの招待権限事前確認が不確定でも警告を常時表示せず、招待ダイアログを直接試行してRPC結果別の案内とリンク共有へ到達可能にする
-- [ ] Discord Activityの招待ダイアログまたはリンク共有へ正しく到達することを実機確認
+- [x] Discord Activityの招待ダイアログへ正しく到達することを実機確認
+- [ ] Discord Activityで招待RPCが失敗した場合にリンク共有へ到達することを実機確認
 - [ ] 同じDiscord Activityへ参加した2人が同じルームへ自動参加することを実機確認し、失敗する場合はインスタンス識別・ルーティングを修正
 - [ ] Discord Web版、iOS、AndroidでActivityを実機確認
 
@@ -76,7 +77,7 @@ Redis未接続の本番では、誤って不完全な共有モードを提供し
 - [ ] Discord Activityで2ユーザー自動参加を実機確認する
 - [ ] `/api/health` の外形監視、Vercelエラー率、Upstash使用量の通知が実際に設定済みか確認し、未設定分を追加する
 - [ ] 依存パッケージの更新候補を互換性と変更履歴で評価し、機能修正と分離した保守PRで安全に更新する
-- [ ] 将来タスク: 現在のデザインを維持したDiscord Activity専用コンパクトレイアウトを設計し、画面の縦横サイズ・セーフエリア・インタラクティブPiPに対応する
+- [x] 現在のデザインを維持したDiscord Activity専用コンパクトレイアウトを追加し、画面の縦横サイズ・セーフエリア・インタラクティブPiP相当の小画面へ対応する
 
 ### Phase 0.5: ホスト移譲（実装済み）
 

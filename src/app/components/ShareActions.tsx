@@ -9,7 +9,7 @@ function minutes(seconds: number) {
   return Math.max(1, Math.round(seconds / 60));
 }
 
-export default function ShareActions({ roomId, state }: { roomId: string; state: PublicTimerState }) {
+export default function ShareActions({ roomId, state, compact = false }: { roomId: string; state: PublicTimerState; compact?: boolean }) {
   const [feedback, setFeedback] = useState<Feedback>(null);
   const roomUrl = typeof window === 'undefined' ? '' : `${window.location.origin}/room/${roomId}`;
   const text = `🍅 Pomodoro Together\nルーム「${roomId}」で一緒に集中しよう。\n集中${minutes(state.focusSeconds)}分・休憩${minutes(state.shortBreakSeconds)}分`;
@@ -61,15 +61,30 @@ export default function ShareActions({ roomId, state }: { roomId: string; state:
             ? 'コピーできませんでした。ブラウザの権限を確認してください。'
             : '';
 
-  return (
-    <div className="share-block">
-      <p className="share-title">仲間を招待</p>
+  const actions = (
+    <>
       <div className="share-actions" aria-label="ルームを共有">
         <button type="button" onClick={() => void shareToDiscord()}>Discord</button>
         <button type="button" onClick={shareToLine}>LINE</button>
         <button type="button" onClick={() => void copy(roomUrl, 'link')}>リンクをコピー</button>
       </div>
       <p className="share-feedback" role="status" aria-live="polite">{message}</p>
+    </>
+  );
+
+  if (compact) {
+    return (
+      <details className="share-block share-block-compact">
+        <summary>リンクで招待</summary>
+        <div className="share-compact-body">{actions}</div>
+      </details>
+    );
+  }
+
+  return (
+    <div className="share-block">
+      <p className="share-title">仲間を招待</p>
+      {actions}
     </div>
   );
 }
