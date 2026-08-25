@@ -11,7 +11,7 @@ const inviteMessages = {
   ready: '',
   'voice-channel-required': 'サーバーのボイスチャンネルから開くとDiscord招待を利用できます。',
   'permission-required': 'このチャンネルでは招待を作成する権限がありません。',
-  unknown: '招待可否を確認できません。失敗する場合はリンク共有を利用してください。',
+  unknown: '',
 } as const;
 
 export default function DiscordActivityPanel({ roomId, state }: { roomId: string; state: PublicTimerState }) {

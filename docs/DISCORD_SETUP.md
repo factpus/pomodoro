@@ -43,7 +43,8 @@ Discord内で起動された場合だけEmbedded App SDKを初期化し、`ident
 - [x] `DISCORD_CLIENT_SECRET` と `NEXT_PUBLIC_DISCORD_CLIENT_ID` をVercelへ設定して再デプロイ
 - [x] Activity Entry Pointを設定
 - [x] Discordデスクトップ版でActivityの起動、OAuth認証、タイマー操作を確認
-- [ ] 招待権限の事前確認が不確定になる原因を解消し、招待ダイアログとリンク共有フォールバックを確認
+- [x] 招待権限の事前確認が不確定でも、警告を常時表示せずダイアログを直接試行するよう修正
+- [ ] 招待ダイアログとRPCエラー時のリンク共有フォールバックを実機確認
 - [ ] 同じActivityへ2人で参加し、同一ルームへの自動参加と参加人数を確認
 - [ ] Discord Web版で確認
 - [ ] Discord iOS版・Android版で確認
@@ -58,3 +59,13 @@ Discord内で起動された場合だけEmbedded App SDKを初期化し、`ident
 - 同じActivityへ参加した2人が同じ `instance_id` から同じルームへ自動参加する
 - 集中開始・一時停止・休憩でRich Presenceが更新される
 - Discord未設定の通常ブラウザでエラーが出ない
+
+### 2ユーザー自動参加の実機手順
+
+1. 同じボイスチャンネルで1人目がActivityを起動し、表示されたルーム名を控える。
+2. DiscordのActivity参加導線から2人目が同じ実行中Activityへ参加する。各自が別々にActivityを新規起動しない。
+3. 両画面のルーム名が一致し、Discord Activityの接続人数とルーム下部の参加人数が2人になることを確認する。
+4. 2人目から開始・停止・リセット・スキップを行い、両画面へ反映されることを確認する。
+5. ホスト側Activityを閉じ、約30〜40秒後に残った側が「ホスト」表示へ変わることを確認する。
+
+サーバー側では同じ `instance_id` をSHA-256で同じルームIDへ写像する。再参加・別ユーザー・異なるinstanceの分離はユニットテストで固定しているが、Discordが両ユーザーへ同じ `instance_id` を渡すことは上記手順で実機確認する。

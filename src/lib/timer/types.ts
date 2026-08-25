@@ -30,6 +30,7 @@ export interface RoomRecord {
   revision: number;
   hostTokenHash: string;
   hostClientId?: string;
+  hostLastSeenAt?: number;
   state: TimerState;
   participants: Record<string, number>;
   pendingHostTransfer?: {
@@ -69,6 +70,11 @@ export interface RoomSnapshot {
   };
   participants?: ParticipantSummary[];
   hostTransfer?: HostTransferSnapshot;
+}
+
+export interface HeartbeatResult {
+  snapshot: RoomSnapshot;
+  hostToken: string | null;
 }
 
 export type PublicRoomSnapshot = Omit<RoomSnapshot, 'role' | 'participants' | 'hostTransfer'>;

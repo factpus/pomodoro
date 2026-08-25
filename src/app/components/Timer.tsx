@@ -6,7 +6,7 @@ import { prepareAudioOnce } from '@/lib/client/audio';
 import { browserAudioPreferenceStorage, DEFAULT_AMBIENT_MUTED, DEFAULT_AMBIENT_VOLUME, readAudioPreferences, writeAudioPreferences } from '@/lib/client/audio-preferences';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
 import { fetchPublicRoom, sendCommand, sendHeartbeat } from '@/lib/client/rooms';
-import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldApplyRequestFailure, shouldRevokeHostToken, snapshotAcceptance, type SnapshotWatermark } from '@/lib/client/snapshot-order';
+import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldApplyRequestFailure, shouldRevokeHostToken, shouldStoreIssuedHostToken, snapshotAcceptance, type SnapshotWatermark } from '@/lib/client/snapshot-order';
 import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand, TimerPhase } from '@/lib/timer/types';
 import ShareActions from './ShareActions';
 import DiscordWebhookSettings from './DiscordWebhookSettings';
@@ -26,6 +26,7 @@ export default function Timer({ roomId }: { roomId: string }) {
   const [audioPreferencesLoaded, setAudioPreferencesLoaded] = useState(false);
   const [hostToken, setHostToken] = useState<string | null>(null);
   const [currentClientId, setCurrentClientId] = useState('');
+  const [membershipReady, setMembershipReady] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
   const tokenRef = useRef<string | null>(null);
   const clientRef = useRef('');
@@ -33,6 +34,7 @@ export default function Timer({ roomId }: { roomId: string }) {
   const latestTimerSnapshotRef = useRef<SnapshotWatermark | null>(null);
   const latestAuthenticatedSnapshotRef = useRef<SnapshotWatermark | null>(null);
   const acceptedResponseRef = useRef(0);
+  const heartbeatSuccessRef = useRef(0);
   const previousPhaseRef = useRef<TimerPhase | null>(null);
   const focusAudioRef = useRef<HTMLAudioElement>(null);
   const breakAudioRef = useRef<HTMLAudioElement>(null);
@@ -53,7 +55,7 @@ export default function Timer({ roomId }: { roomId: string }) {
     writeAudioPreferences(browserAudioPreferenceStorage(), { volume, muted: isMuted });
   }, [audioPreferencesLoaded, isMuted, volume]);
 
-  const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot, requestToken?: string | null) => {
+  const acceptSnapshot = useCallback((next: RoomSnapshot | PublicRoomSnapshot, requestToken?: string | null, issuedHostToken?: string | null) => {
     const previousGeneration = latestTimerSnapshotRef.current?.generation ?? null;
     const generationChanged = previousGeneration !== null && next.generation > previousGeneration;
     if (generationChanged) {
@@ -73,14 +75,24 @@ export default function Timer({ roomId }: { roomId: string }) {
       watermark,
       authenticated,
     );
+    const credentialContextCurrent = isCredentialContextCurrent(tokenRef.current, requestToken);
+    // Preserve a newly issued credential even if this snapshot lost a revision race to a later heartbeat.
+    const issuedTokenStored = authenticated
+      && Boolean(issuedHostToken)
+      && shouldStoreIssuedHostToken(tokenRef.current, requestToken, previousGeneration, next.generation);
     const acceptance = {
       ...orderedAcceptance,
-      metadata: orderedAcceptance.metadata && isCredentialContextCurrent(tokenRef.current, requestToken),
+      metadata: orderedAcceptance.metadata && credentialContextCurrent,
     };
     if (acceptance.timer) latestTimerSnapshotRef.current = watermark;
     if (acceptance.metadata) latestAuthenticatedSnapshotRef.current = watermark;
     if (acceptance.timer || acceptance.metadata) acceptedResponseRef.current += 1;
     const receivedAt = Date.now();
+    if (issuedTokenStored && issuedHostToken) {
+      sessionStorage.setItem(hostTokenKey(roomId), issuedHostToken);
+      tokenRef.current = issuedHostToken;
+      setHostToken(issuedHostToken);
+    }
     if (authenticated && acceptance.metadata && shouldRevokeHostToken(tokenRef.current, requestToken, next.role)) {
       sessionStorage.removeItem(hostTokenKey(roomId));
       tokenRef.current = null;
@@ -100,7 +112,7 @@ export default function Timer({ roomId }: { roomId: string }) {
     }
     setConnection('connected');
     setError('');
-    if (!acceptance.timer) return;
+    if (!acceptance.timer) return issuedTokenStored;
     serverOffsetRef.current = next.state.serverNow - receivedAt;
     setRemaining(next.state.remainingSeconds);
     if (previousPhaseRef.current && previousPhaseRef.current !== next.state.phase) {
@@ -108,14 +120,17 @@ export default function Timer({ roomId }: { roomId: string }) {
       if (Notification.permission === 'granted') new Notification(title, { body: `ルーム「${roomId}」のタイマーが切り替わりました。` });
     }
     previousPhaseRef.current = next.state.phase;
+    return issuedTokenStored;
   }, [roomId]);
 
   useEffect(() => {
     latestTimerSnapshotRef.current = null;
     latestAuthenticatedSnapshotRef.current = null;
     acceptedResponseRef.current = 0;
+    heartbeatSuccessRef.current = 0;
     const notificationTimer = window.setTimeout(() => {
       setNotificationPermission('Notification' in window ? Notification.permission : 'unsupported');
+      setMembershipReady(false);
     }, 0);
     const fragment = new URLSearchParams(window.location.hash.slice(1));
     const transferredToken = fragment.get('hostToken');
@@ -152,9 +167,21 @@ export default function Timer({ roomId }: { roomId: string }) {
     };
     const beat = async () => {
       const acceptedAtStart = acceptedResponseRef.current;
+      const heartbeatSuccessAtStart = heartbeatSuccessRef.current;
       const requestToken = tokenRef.current;
-      try { acceptSnapshot(await sendHeartbeat(roomId, clientRef.current, requestToken), requestToken); failures = 0; }
+      try {
+        const result = await sendHeartbeat(roomId, clientRef.current, requestToken);
+        const issuedTokenStored = acceptSnapshot(result.snapshot, requestToken, result.hostToken);
+        if (issuedTokenStored && result.hostToken) {
+          const confirmation = await sendHeartbeat(roomId, clientRef.current, result.hostToken);
+          acceptSnapshot(confirmation.snapshot, result.hostToken, confirmation.hostToken);
+        }
+        heartbeatSuccessRef.current += 1;
+        setMembershipReady(true);
+        failures = 0;
+      }
       catch {
+        if (heartbeatSuccessRef.current === heartbeatSuccessAtStart) setMembershipReady(false);
         if (!shouldApplyRequestFailure(acceptedAtStart, acceptedResponseRef.current)) return;
         failures += 1;
         if (failures > 1) setConnection('reconnecting');
@@ -191,7 +218,7 @@ export default function Timer({ roomId }: { roomId: string }) {
   }, [isMuted, snapshot?.state.isRunning, snapshot?.state.phase, volume]);
 
   async function command(value: TimerCommand) {
-    if (!snapshot || snapshot.role !== 'host' || connection !== 'connected') return;
+    if (!snapshot || !membershipReady || connection !== 'connected') return;
     setError('');
     const requestToken = tokenRef.current;
     try { acceptSnapshot(await sendCommand(roomId, value, clientRef.current, requestToken), requestToken); }
@@ -231,11 +258,12 @@ export default function Timer({ roomId }: { roomId: string }) {
         <div className="time" role="timer" aria-label={`残り${Math.floor(remaining / 60)}分${remaining % 60}秒`}>{minutes}<span>:</span>{seconds}</div>
         <p className="cycle">🍅 {snapshot?.state.completedPomodoros ?? 0} 完了 ・ 次の長休憩まで {snapshot ? snapshot.state.longBreakEvery - snapshot.state.cyclePosition : '–'} セット</p>
         <div className="controls">
-          <button className="icon-button" onClick={() => void command('reset')} disabled={role !== 'host' || connection !== 'connected'} aria-label="タイマーをリセット">↺</button>
-          <button className="play-button" onClick={() => { interact(); void command(running ? 'pause' : 'start'); }} disabled={role !== 'host' || connection !== 'connected'} aria-label={running ? 'タイマーを一時停止' : 'タイマーを開始'}>{running ? 'Ⅱ' : '▶'}</button>
-          <button className="icon-button" onClick={() => void command('skip')} disabled={role !== 'host' || connection !== 'connected'} aria-label="次のフェーズへ進む">↠</button>
+          <button className="icon-button" onClick={() => void command('reset')} disabled={!snapshot || !membershipReady || connection !== 'connected'} aria-label="タイマーをリセット">↺</button>
+          <button className="play-button" onClick={() => { interact(); void command(running ? 'pause' : 'start'); }} disabled={!snapshot || !membershipReady || connection !== 'connected'} aria-label={running ? 'タイマーを一時停止' : 'タイマーを開始'}>{running ? 'Ⅱ' : '▶'}</button>
+          <button className="icon-button" onClick={() => void command('skip')} disabled={!snapshot || !membershipReady || connection !== 'connected'} aria-label="次のフェーズへ進む">↠</button>
         </div>
-        {role === 'participant' && <p className="hint">タイマー操作はホストだけが行えます。</p>}
+        {snapshot && !membershipReady && <p className="hint">参加状態を確認しています。接続が完了すると操作できます。</p>}
+        {role === 'participant' && membershipReady && <p className="hint">タイマーは全員で操作できます。連携設定とホスト移譲はホスト専用です。</p>}
         {error && <p className="error" role="alert">{error}</p>}
         {snapshot && <ShareActions roomId={roomId} state={snapshot.state} />}
         {snapshot?.role === 'host' && snapshot.integrations.discordWebhookAvailable && <DiscordWebhookSettings roomId={roomId} token={hostToken} connected={snapshot.integrations.discordWebhookConnected} onUpdate={acceptSnapshot} />}

@@ -65,6 +65,17 @@ export function isCredentialContextCurrent(
   return requestToken === undefined || requestToken === currentToken;
 }
 
+export function shouldStoreIssuedHostToken(
+  currentToken: string | null,
+  requestToken: string | null | undefined,
+  currentGeneration: number | null,
+  incomingGeneration: number,
+) {
+  return requestToken !== undefined
+    && requestToken === currentToken
+    && (currentGeneration === null || incomingGeneration >= currentGeneration);
+}
+
 export function shouldApplyRequestFailure(startedAtAcceptedResponse: number, currentAcceptedResponse: number) {
   return startedAtAcceptedResponse === currentAcceptedResponse;
 }

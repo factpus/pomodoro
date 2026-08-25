@@ -1,6 +1,6 @@
 'use client';
 
-import type { PublicRoomSnapshot, RoomSnapshot, TimerCommand } from '@/lib/timer/types';
+import type { HeartbeatResult, PublicRoomSnapshot, RoomSnapshot, TimerCommand } from '@/lib/timer/types';
 
 export interface CreateRoomInput {
   roomId?: string;
@@ -41,7 +41,7 @@ export async function fetchPublicRoom(roomId: string, signal?: AbortSignal) {
 }
 
 export async function sendHeartbeat(roomId: string, id: string, token: string | null) {
-  return parse<RoomSnapshot>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/heartbeat`, {
+  return parse<HeartbeatResult>(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/heartbeat`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...auth(token) }, body: JSON.stringify({ clientId: id }),
   }));
 }

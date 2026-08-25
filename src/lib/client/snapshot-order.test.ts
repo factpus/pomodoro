@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldAcceptSnapshot, shouldApplyRequestFailure, shouldRevokeHostToken, snapshotAcceptance } from './snapshot-order';
+import { isCredentialContextCurrent, mergeAuthenticatedSnapshot, shouldAcceptSnapshot, shouldApplyRequestFailure, shouldRevokeHostToken, shouldStoreIssuedHostToken, snapshotAcceptance } from './snapshot-order';
 
 describe('shouldAcceptSnapshot', () => {
   it('accepts the first snapshot', () => {
@@ -121,6 +121,24 @@ describe('isCredentialContextCurrent', () => {
 
   it('accepts server-authorized responses that do not use the current token', () => {
     expect(isCredentialContextCurrent('new-token', undefined)).toBe(true);
+  });
+});
+
+describe('shouldStoreIssuedHostToken', () => {
+  it('preserves an issued token when a later no-token heartbeat response arrived first', () => {
+    const laterHeartbeat = { generation: 10, revision: 4, version: 1, serverNow: 2_001 };
+    const issuingHeartbeat = { generation: 10, revision: 3, version: 1, serverNow: 2_000 };
+    expect(snapshotAcceptance(laterHeartbeat, laterHeartbeat, issuingHeartbeat, true).metadata).toBe(false);
+    expect(shouldStoreIssuedHostToken(null, null, 10, 10)).toBe(true);
+  });
+
+  it('does not overwrite a newer credential or accept a previous room generation', () => {
+    expect(shouldStoreIssuedHostToken('new-token', null, 10, 10)).toBe(false);
+    expect(shouldStoreIssuedHostToken(null, null, 11, 10)).toBe(false);
+  });
+
+  it('requires the credential context from the issuing request', () => {
+    expect(shouldStoreIssuedHostToken(null, undefined, 10, 10)).toBe(false);
   });
 });
 

@@ -185,15 +185,10 @@ export default function DiscordActivityProvider({ children }: { children: React.
       setInviteAvailability(getInviteAvailability({ authenticated: true, guildId: sdk.guildId, channelId: sdk.channelId }));
       throw new Error('サーバーのボイスチャンネルからActivityを開くと、Discordの招待画面を利用できます。');
     }
-    const { Permissions, PermissionUtils, RPCErrorCodes } = await import('@discord/embedded-app-sdk');
+    const { RPCErrorCodes } = await import('@discord/embedded-app-sdk');
     try {
-      const { permissions } = await sdk.commands.getChannelPermissions();
-      const canCreateInvite = PermissionUtils.can(Permissions.CREATE_INSTANT_INVITE, permissions);
-      setInviteAvailability(getInviteAvailability({ authenticated: true, guildId: sdk.guildId, channelId: sdk.channelId, canCreateInvite }));
-      if (!canCreateInvite) {
-        throw new Error('このチャンネルで招待を作成する権限がありません。');
-      }
       await sdk.commands.openInviteDialog();
+      setInviteAvailability('ready');
     } catch (caught) {
       const code = typeof caught === 'object' && caught !== null && 'code' in caught ? caught.code : undefined;
       if (code === RPCErrorCodes.INVALID_CHANNEL) {

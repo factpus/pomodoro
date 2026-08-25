@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('two clients share state while only the host can control it', async ({ browser }) => {
+test('two clients share state and every active participant can control the timer', async ({ browser }) => {
   const host = await browser.newContext();
   const guest = await browser.newContext();
   const hostPage = await host.newPage();
@@ -15,7 +15,7 @@ test('two clients share state while only the host can control it', async ({ brow
 
   await guestPage.goto(`/room/${roomId}`);
   await expect(guestPage.getByText('参加者', { exact: true })).toBeVisible();
-  await expect(guestPage.getByRole('button', { name: 'タイマーを開始' })).toBeDisabled();
+  await expect(guestPage.getByRole('button', { name: 'タイマーを開始' })).toBeEnabled();
   const forbidden = await guestPage.request.post(`/api/rooms/${roomId}/commands`, {
     data: { command: 'start', clientId: crypto.randomUUID() },
   });
@@ -29,7 +29,7 @@ test('two clients share state while only the host can control it', async ({ brow
   expect((await publicSnapshot.json()).role).toBeUndefined();
   expect(publicSnapshot.headers()['cache-control']).toContain('s-maxage=1');
 
-  await hostPage.getByRole('button', { name: 'タイマーを開始' }).click();
+  await guestPage.getByRole('button', { name: 'タイマーを開始' }).click();
   await expect(hostPage.getByRole('button', { name: 'タイマーを一時停止' })).toBeVisible();
   await expect(guestPage.getByRole('button', { name: 'タイマーを一時停止' })).toBeVisible({ timeout: 3_000 });
 
@@ -58,9 +58,34 @@ test('two clients share state while only the host can control it', async ({ brow
   });
   expect(revokedCommand.status()).toBe(403);
   await expect(hostPage.getByText('参加者', { exact: true })).toBeVisible({ timeout: 12_000 });
-  await expect(hostPage.getByRole('button', { name: 'タイマーを開始' })).toBeDisabled();
+  await expect(hostPage.getByRole('button', { name: 'タイマーを開始' })).toBeEnabled();
   await guestPage.getByRole('button', { name: 'タイマーを開始' }).click();
   await expect(guestPage.getByRole('button', { name: 'タイマーを一時停止' })).toBeVisible();
+
+  await host.close();
+  await guest.close();
+});
+
+test('a remaining participant automatically becomes host after the host disconnects', async ({ browser }) => {
+  test.setTimeout(60_000);
+  const host = await browser.newContext();
+  const guest = await browser.newContext();
+  const hostPage = await host.newPage();
+  const guestPage = await guest.newPage();
+  const roomId = `handoff-${Date.now()}`;
+
+  await hostPage.goto('/');
+  await hostPage.getByRole('textbox', { name: 'ルーム名', exact: true }).fill(roomId);
+  await hostPage.getByRole('button', { name: 'ルームを作る' }).click();
+  await expect(hostPage.getByRole('button', { name: 'ホスト' })).toBeVisible();
+
+  await guestPage.goto(`/room/${roomId}`);
+  await expect(guestPage.getByText('参加者', { exact: true })).toBeVisible();
+  await hostPage.close();
+
+  await expect(guestPage.getByRole('button', { name: 'ホスト' })).toBeVisible({ timeout: 45_000 });
+  const inheritedToken = await guestPage.evaluate((id) => sessionStorage.getItem(`pomodoro-together-host:${id}`), roomId);
+  expect(inheritedToken).toBeTruthy();
 
   await host.close();
   await guest.close();
@@ -72,6 +97,24 @@ test('API rejects invalid room settings', async ({ request }) => {
     data: { roomId: '../invalid', settings: { focusMinutes: 0, shortBreakMinutes: 99, longBreakMinutes: 15, longBreakEvery: 1 } },
   });
   expect(response.status()).toBe(400);
+});
+
+test('participant controls wait for a successful membership heartbeat', async ({ page, request }) => {
+  const roomId = `membership-${Date.now()}`;
+  const created = await request.post('/api/rooms', {
+    headers: { 'X-Client-Id': crypto.randomUUID() },
+    data: {
+      roomId,
+      settings: { focusMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakEvery: 4 },
+    },
+  });
+  expect(created.status()).toBe(201);
+  await page.route(`**/api/rooms/${roomId}/heartbeat`, (route) => route.abort());
+
+  await page.goto(`/room/${roomId}`);
+  await expect(page.getByText('同期中', { exact: true })).toBeVisible();
+  await expect(page.getByText('参加状態を確認しています。接続が完了すると操作できます。')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'タイマーを開始' })).toBeDisabled();
 });
 
 test('health endpoint reports the local fallback without caching', async ({ request }) => {

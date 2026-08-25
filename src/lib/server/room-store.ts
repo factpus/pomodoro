@@ -3,7 +3,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { Redis } from '@upstash/redis';
 import { advanceTimer, applyTimerCommand, createTimerState, toPublicTimerState } from '@/lib/timer/model';
-import type { PublicRoomSnapshot, RoomRecord, RoomSnapshot, TimerCommand, TimerSettings } from '@/lib/timer/types';
+import type { HeartbeatResult, PublicRoomSnapshot, RoomRecord, RoomSnapshot, TimerCommand, TimerSettings } from '@/lib/timer/types';
 import { redisClient, storageMode } from './redis';
 import { createHostToken, hashToken, tokenMatches } from './security';
 import { DiscordWebhookError, encryptWebhookUrl, postDiscordWebhook, validateDiscordWebhookUrl } from './discord-webhook';
@@ -11,6 +11,7 @@ import { logServerEvent } from './observability';
 
 const ROOM_TTL_SECONDS = 24 * 60 * 60;
 const PARTICIPANT_TTL_MS = 15_000;
+const HOST_DISCONNECT_GRACE_MS = 30_000;
 const HOST_TRANSFER_TTL_MS = 60_000;
 const LOCK_TTL_MS = 3_000;
 
@@ -62,6 +63,11 @@ function participantLabel(clientId: string) {
 
 function participantCandidateId(room: RoomRecord, clientId: string) {
   return hashToken(`${room.hostTokenHash}:${clientId}`).slice(0, 32);
+}
+
+function currentHostLastSeenAt(room: RoomRecord, now: number) {
+  if (!room.hostClientId) return null;
+  return room.hostLastSeenAt ?? room.participants[room.hostClientId] ?? now;
 }
 
 function snapshot(room: RoomRecord, token: string | null, now: number, clientId?: string): RoomSnapshot {
@@ -191,6 +197,7 @@ export async function createRoom(
     revision: 1,
     hostTokenHash: hashToken(hostToken),
     hostClientId: clientId,
+    hostLastSeenAt: now,
     state: createTimerState(settings, now),
     participants: { [clientId]: now },
     createdAt: now,
@@ -218,7 +225,10 @@ export async function joinDiscordActivityRoom(instanceId: string, clientId: stri
       room.state = advanceTimer(room.state, now);
       room.updatedAt = now;
       const hostToken = tokenMatches(recoveryToken, room.hostTokenHash) ? recoveryToken : null;
-      if (hostToken) room.hostClientId = clientId;
+      if (hostToken) {
+        room.hostClientId = clientId;
+        room.hostLastSeenAt = now;
+      }
       return { room, hostToken };
     }
     const hostToken = recoveryToken;
@@ -227,6 +237,7 @@ export async function joinDiscordActivityRoom(instanceId: string, clientId: stri
       revision: 0,
       hostTokenHash: hashToken(hostToken),
       hostClientId: clientId,
+      hostLastSeenAt: now,
       state: createTimerState({ focusSeconds: 25 * 60, shortBreakSeconds: 5 * 60, longBreakSeconds: 15 * 60, longBreakEvery: 4 }, now),
       participants: { [clientId]: now },
       createdAt: now,
@@ -292,39 +303,58 @@ export async function heartbeat(
   clientId: string,
   token: string | null,
   now = Date.now(),
-): Promise<RoomSnapshot> {
+): Promise<HeartbeatResult> {
   const redis = roomDatabase();
   const update = (current: RoomRecord) => {
+    const hostLastSeenAt = currentHostLastSeenAt(current, now);
     const room = pruneParticipants(current, now);
     room.participants[clientId] = now;
-    if (tokenMatches(token, room.hostTokenHash)) room.hostClientId = clientId;
+    let issuedHostToken: string | null = null;
+    if (tokenMatches(token, room.hostTokenHash)) {
+      room.hostClientId = clientId;
+      room.hostLastSeenAt = now;
+    } else if (!room.hostClientId || hostLastSeenAt === null || now - hostLastSeenAt >= HOST_DISCONNECT_GRACE_MS) {
+      issuedHostToken = createHostToken();
+      room.hostTokenHash = hashToken(issuedHostToken);
+      room.hostClientId = clientId;
+      room.hostLastSeenAt = now;
+      delete room.pendingHostTransfer;
+    } else {
+      room.hostLastSeenAt = hostLastSeenAt;
+    }
     room.state = advanceTimer(room.state, now);
     room.updatedAt = now;
-    return room;
+    return { room, issuedHostToken };
   };
   if (redis) {
     const result = await withRedisLock(redis, roomId, async () => {
       const current = await readRedis(redis, roomId);
       if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
       const previousPhase = current.state.phase;
-      const room = update(current);
-      await writeRedis(redis, room);
-      return { room, phaseChanged: previousPhase !== room.state.phase };
+      const updateResult = update(current);
+      await writeRedis(redis, updateResult.room);
+      return { ...updateResult, phaseChanged: previousPhase !== updateResult.room.state.phase };
     });
     if (result.phaseChanged) {
       await notifyDiscord(result.room, `🍅 **${phaseNames[result.room.state.phase]}を開始しました**\nルーム: ${roomId}`);
     }
-    return snapshot(result.room, token, now, clientId);
+    return {
+      snapshot: snapshot(result.room, result.issuedHostToken ?? token, now, clientId),
+      hostToken: result.issuedHostToken,
+    };
   }
   const current = memoryRooms.get(roomId);
   if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
   const previousPhase = current.state.phase;
-  const room = update(current);
-  writeMemory(room);
-  if (previousPhase !== room.state.phase) {
-    await notifyDiscord(room, `🍅 **${phaseNames[room.state.phase]}を開始しました**\nルーム: ${roomId}`);
+  const result = update(current);
+  writeMemory(result.room);
+  if (previousPhase !== result.room.state.phase) {
+    await notifyDiscord(result.room, `🍅 **${phaseNames[result.room.state.phase]}を開始しました**\nルーム: ${roomId}`);
   }
-  return snapshot(room, token, now, clientId);
+  return {
+    snapshot: snapshot(result.room, result.issuedHostToken ?? token, now, clientId),
+    hostToken: result.issuedHostToken,
+  };
 }
 
 export async function commandRoom(
@@ -335,11 +365,15 @@ export async function commandRoom(
   now = Date.now(),
 ): Promise<RoomSnapshot> {
   const update = (current: RoomRecord) => {
-    if (!tokenMatches(token, current.hostTokenHash)) {
-      throw new RoomForbiddenError('タイマーを操作できるのはホストだけです。');
-    }
     const room = pruneParticipants(current, now);
+    if (!Object.hasOwn(room.participants, clientId)) {
+      throw new RoomForbiddenError('タイマーを操作できるのは接続中の参加者だけです。');
+    }
     room.participants[clientId] = now;
+    if (tokenMatches(token, room.hostTokenHash)) {
+      room.hostClientId = clientId;
+      room.hostLastSeenAt = now;
+    }
     room.state = applyTimerCommand(room.state, command, now);
     room.updatedAt = now;
     return room;
@@ -389,6 +423,7 @@ export async function connectDiscordWebhook(roomId: string, token: string | null
       if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
       if (!tokenMatches(token, current.hostTokenHash)) throw new RoomForbiddenError('Discord通知を設定できるのはホストだけです。');
       current.discordWebhook = secret;
+      current.hostLastSeenAt = now;
       current.updatedAt = now;
       await writeRedis(redis, current);
       return current;
@@ -400,6 +435,7 @@ export async function connectDiscordWebhook(roomId: string, token: string | null
   if (!room) throw new RoomNotFoundError('ルームが見つかりません。');
   if (!tokenMatches(token, room.hostTokenHash)) throw new RoomForbiddenError('Discord通知を設定できるのはホストだけです。');
   room.discordWebhook = secret;
+  room.hostLastSeenAt = now;
   room.updatedAt = now;
   writeMemory(room);
   return snapshot(room, token, now);
@@ -413,6 +449,7 @@ export async function disconnectDiscordWebhook(roomId: string, token: string | n
       if (!current) throw new RoomNotFoundError('ルームが見つかりません。');
       if (!tokenMatches(token, current.hostTokenHash)) throw new RoomForbiddenError('Discord通知を解除できるのはホストだけです。');
       delete current.discordWebhook;
+      current.hostLastSeenAt = now;
       current.updatedAt = now;
       await writeRedis(redis, current);
       return current;
@@ -424,6 +461,7 @@ export async function disconnectDiscordWebhook(roomId: string, token: string | n
   if (!room) throw new RoomNotFoundError('ルームが見つかりません。');
   if (!tokenMatches(token, room.hostTokenHash)) throw new RoomForbiddenError('Discord通知を解除できるのはホストだけです。');
   delete room.discordWebhook;
+  room.hostLastSeenAt = now;
   room.updatedAt = now;
   writeMemory(room);
   return snapshot(room, token, now);
@@ -443,6 +481,7 @@ export async function requestHostTransfer(
     const room = pruneParticipants(current, now);
     room.participants[clientId] = now;
     room.hostClientId = clientId;
+    room.hostLastSeenAt = now;
     const targetClientId = Object.keys(room.participants).find(
       (id) => id !== clientId && participantCandidateId(room, id) === targetCandidateId,
     );
@@ -490,6 +529,7 @@ export async function cancelHostTransfer(
     const room = pruneParticipants(current, now);
     room.participants[clientId] = now;
     room.hostClientId = clientId;
+    room.hostLastSeenAt = now;
     delete room.pendingHostTransfer;
     room.updatedAt = now;
     return room;
@@ -524,6 +564,7 @@ export async function acceptHostTransfer(roomId: string, clientId: string, now =
     const hostToken = createHostToken();
     room.hostTokenHash = hashToken(hostToken);
     room.hostClientId = clientId;
+    room.hostLastSeenAt = now;
     room.participants[clientId] = now;
     delete room.pendingHostTransfer;
     room.updatedAt = now;
