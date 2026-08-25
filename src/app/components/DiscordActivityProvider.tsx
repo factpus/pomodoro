@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import type { DiscordSDK } from '@discord/embedded-app-sdk';
+import { isDiscordActivityLaunch } from '@/lib/client/discord-activity';
 import { getInviteAvailability, type InviteAvailability } from '@/lib/client/discord-invite';
 import { clientId, hostTokenKey } from '@/lib/client/identity';
 import type { RoomSnapshot } from '@/lib/timer/types';
@@ -66,11 +67,22 @@ export default function DiscordActivityProvider({ children }: { children: React.
 
   useEffect(() => {
     const applicationId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
-    const params = new URLSearchParams(window.location.search);
-    if (!applicationId || !params.has('frame_id') || !params.has('instance_id') || !params.has('platform')) return;
+    if (!isDiscordActivityLaunch(window.location.search)) return;
     activityQueryRef.current = window.location.search;
     let cancelled = false;
     let cleanup: (() => Promise<unknown>) | undefined;
+    const layoutTimer = window.setTimeout(() => {
+      if (cancelled) return;
+      setEmbedded(true);
+      if (!applicationId) {
+        setInviteAvailability('unknown');
+        setError('Discord ActivityのApplication IDが設定されていません。');
+      }
+    }, 0);
+    if (!applicationId) return () => {
+      cancelled = true;
+      window.clearTimeout(layoutTimer);
+    };
 
     void (async () => {
       let stage: ConnectionStage = 'sdk-ready';
@@ -80,8 +92,6 @@ export default function DiscordActivityProvider({ children }: { children: React.
         sdkRef.current = sdk;
         await sdk.ready();
         if (cancelled) return;
-        setEmbedded(true);
-
         stage = 'authorize';
         const { code } = await sdk.commands.authorize({
           client_id: applicationId,
@@ -146,6 +156,7 @@ export default function DiscordActivityProvider({ children }: { children: React.
 
     return () => {
       cancelled = true;
+      window.clearTimeout(layoutTimer);
       accessTokenRef.current = null;
       if (cleanup) void cleanup();
     };

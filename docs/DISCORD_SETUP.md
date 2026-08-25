@@ -44,7 +44,8 @@ Discord内で起動された場合だけEmbedded App SDKを初期化し、`ident
 - [x] Activity Entry Pointを設定
 - [x] Discordデスクトップ版でActivityの起動、OAuth認証、タイマー操作を確認
 - [x] 招待権限の事前確認が不確定でも、警告を常時表示せずダイアログを直接試行するよう修正
-- [ ] 招待ダイアログとRPCエラー時のリンク共有フォールバックを実機確認
+- [x] 招待ダイアログを実機確認
+- [ ] RPCエラー時のリンク共有フォールバックを実機確認
 - [ ] 同じActivityへ2人で参加し、同一ルームへの自動参加と参加人数を確認
 - [ ] Discord Web版で確認
 - [ ] Discord iOS版・Android版で確認

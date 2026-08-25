@@ -110,5 +110,63 @@ footer nav { display: flex; flex-wrap: wrap; gap: .7rem 1.1rem; }
 .empty h1 { font-size: clamp(2rem, 8vw, 4rem); }
 .empty .button { margin-top: 1.25rem; }
 
+/* Discord Activity keeps the primary timer controls above secondary settings. */
+.discord-activity-layout {
+  padding:
+    max(.55rem, env(safe-area-inset-top))
+    max(.55rem, env(safe-area-inset-right))
+    max(.7rem, env(safe-area-inset-bottom))
+    max(.55rem, env(safe-area-inset-left));
+}
+.discord-activity-layout .room-nav { width: min(680px, 100%); margin-bottom: .55rem; gap: .6rem; }
+.discord-activity-layout .room-nav .brand { font-size: .82rem; }
+.discord-activity-layout .badge, .discord-activity-layout .status { padding: .28rem .55rem; font-size: .68rem; }
+.discord-activity-layout .timer-card { width: min(680px, 100%); margin: 0 auto; border-radius: 1.15rem; padding: clamp(.8rem, 2.5vmin, 1.35rem); }
+.discord-activity-layout .activity-panel { margin-bottom: .65rem; padding: .55rem .7rem; gap: .45rem .7rem; }
+.discord-activity-layout .activity-panel button { padding: .4rem .65rem; }
+.discord-activity-layout .host-transfer-offer { margin-bottom: .7rem; padding: .7rem; }
+.discord-activity-layout .timer-head { gap: .65rem; }
+.discord-activity-layout .timer-head > div:first-child { min-width: 0; }
+.discord-activity-layout .timer-head h1 { max-width: min(52vw, 410px); margin: .1rem 0; overflow: hidden; font-size: clamp(1.05rem, 3.5vmin, 1.5rem); text-overflow: ellipsis; white-space: nowrap; }
+.discord-activity-layout .eyebrow { font-size: .65rem; }
+.discord-activity-layout .volume-control { gap: .35rem; }
+.discord-activity-layout .volume-control input { width: clamp(58px, 13vw, 82px); }
+.discord-activity-layout .icon-button.small { width: 36px; min-width: 36px; height: 36px; }
+.discord-activity-layout .time { margin: clamp(.8rem, 3.3vh, 1.7rem) 0 .55rem; font-size: clamp(3.7rem, 17vmin, 7.4rem); }
+.discord-activity-layout .cycle { margin: 0; font-size: .78rem; }
+.discord-activity-layout .controls { margin: clamp(.8rem, 2.7vh, 1.35rem) auto; gap: clamp(.8rem, 4vw, 1.5rem); }
+.discord-activity-layout .play-button { width: 64px; height: 64px; font-size: 1.4rem; }
+.discord-activity-layout .icon-button:not(.small) { width: 44px; min-width: 44px; height: 44px; font-size: 1.2rem; }
+.discord-activity-layout .hint { font-size: .74rem; }
+.discord-activity-layout .error { padding: .55rem .65rem; }
+.discord-activity-layout .share-block { margin-top: .8rem; padding-top: .7rem; }
+.discord-activity-layout .share-block-compact { text-align: left; }
+.discord-activity-layout .share-block-compact summary { color: #cffafe; cursor: pointer; font-size: .76rem; font-weight: 800; list-style-position: inside; }
+.discord-activity-layout .share-compact-body { padding-top: .7rem; text-align: center; }
+.discord-activity-layout .share-actions button { min-height: 36px; padding: .4rem .7rem; font-size: .75rem; }
+.discord-activity-layout .share-feedback { min-height: 1rem; margin-top: .4rem; }
+.discord-activity-layout .integration-settings { margin-top: .7rem; }
+.discord-activity-layout .integration-settings summary { padding: .65rem .75rem; }
+.discord-activity-layout .room-actions { margin-top: .75rem; padding-top: .65rem; }
+.discord-activity-layout .empty { margin: 10vh auto; }
+
+@media (max-height: 620px) {
+  .discord-activity-layout .room-nav { margin-bottom: .35rem; }
+  .discord-activity-layout .timer-card { padding-block: .65rem; }
+  .discord-activity-layout .activity-panel { margin-bottom: .45rem; padding-block: .4rem; }
+  .discord-activity-layout .time { margin: .55rem 0 .35rem; font-size: clamp(3.2rem, 15vmin, 5.5rem); }
+  .discord-activity-layout .controls { margin: .65rem auto; }
+  .discord-activity-layout .play-button { width: 58px; height: 58px; }
+}
+
+@media (max-width: 480px) {
+  .discord-activity-layout .room-nav { align-items: flex-start; }
+  .discord-activity-layout .room-nav .brand { max-width: 36vw; line-height: 1.15; }
+  .discord-activity-layout .timer-head h1 { max-width: 48vw; }
+  .discord-activity-layout .activity-panel { justify-content: space-between; text-align: left; }
+  .discord-activity-layout .activity-panel p { text-align: center; }
+  .discord-activity-layout .cycle { font-size: .7rem; }
+}
+
 @media (max-width: 720px) { .hero, .home-features { grid-template-columns: 1fr; } .volume-control input { width: 70px; } .room-nav .brand { font-size: .85rem; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
